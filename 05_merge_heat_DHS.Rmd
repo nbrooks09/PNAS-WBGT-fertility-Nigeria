@@ -1,0 +1,458 @@
+---
+title: "Prepare heat and calendar data"
+author: "Nina Brooks"
+date: "2023-03-08"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r packages, warning = FALSE, message = FALSE}
+rm(list = ls())
+
+# load libraries and source functions 
+source(here::here("replication/setup.R"))
+options(tibble.print_min = 25)
+options(scipen = 999)
+
+```
+
+# Merge heat and conception data
+```{r convert calendar to survival format}
+dhs_cal <- readRDS(here("replication/data/clean/dhs_cal.Rds"))
+
+# create survival data for conceptions
+cdat <- dhs_cal %>%
+    # keep a fixed 5-year (60 month) calendar for the 60 months preceding the interview (IPUMS guide)
+    group_by(womanid) %>%
+    arrange(-calcmc_month) %>%
+    mutate(seq = 1:n()) %>%
+    filter(seq <= 60) %>%
+    mutate(
+        intmonth = intdatecmc - ((intyear - 1900)*12)) %>%
+    arrange(-calcmc_month) %>%
+    select(
+        dhsid, womanid, intmonth, intyear, intdatecmc, residcmc, calcmc_month, calseq, 
+        caleventpbt, conception, calpreg, calbirth, calterm, calpreg_length,
+        calpreg_long, calreprod_allevents, fptypnow, floor_lbl, age5yr_lbl, 
+        cheb_moving, agemo, dobcmc, urban_lbl, religion_lbl, marstat_lbl, 
+        educlvl_lbl,  sample, calbirth_total, calpreg_total, calterm_total, age,
+        agemo, age5yr_lbl, admin1_lbl, admin2_lbl, currwork, wkcurrjob, 
+        wkcurrjob_lbl, ends_with("lbl"), geo_ng2003_2018, geoalt_ng2008_2018,
+        wiferank, wifenum, calcontr) %>%
+    group_by(womanid) %>% 
+    mutate(
+        young = case_when(
+            agemo/12 < 25 ~ "Under 25",
+            T ~ "25 and older"
+        ),
+        first_child = case_when(
+            cheb_moving == 0 ~ "No Children",
+            T ~ "Has children"
+        ),
+         cheb_moving_f = 
+               case_when(
+                   cheb_moving >=11  ~ "11+",
+                   T ~ as.character(cheb_moving)
+               )
+    ) %>%
+    group_by(womanid) %>%
+    arrange(calcmc_month) %>%
+    mutate(
+        cal_time = row_number()
+    ) %>%
+    mutate(
+        cal_start = min(calcmc_month),
+        cal_stop = max(calcmc_month),
+        conceive = conception == 1,
+        con_month = case_when(conceive ~ cal_time)
+    ) %>% 
+    ungroup() %>%
+    mutate(
+        ageyrs = floor(agemo/12)
+    )
+
+
+```
+
+
+```{r merge cal with heat data}
+heat_monthly <- readRDS(here("replication/data/clean/wbgtmax_monthly_ng.Rds"))
+
+cdat_heat_keep <- cdat %>%
+    inner_join(heat_monthly %>% 
+                   select(dhsid, calcmc_month, yrmo), 
+                              by = c("dhsid", "calcmc_month")) %>%
+    group_by(womanid) %>%
+    arrange(calcmc_month) %>%
+    mutate(
+        cal_time = row_number(),
+        keep_dat = ifelse(any(conceive), 
+                      min(con_month, na.rm = T), 
+                      max(cal_time)),
+        RC = case_when(keep_dat == cal_time ~ !conceive)
+    ) %>%
+    # identify cmc when conception occurs & drop woman-observations after
+    group_by(womanid) %>%
+    filter(cal_time <= keep_dat)
+
+
+# identify women who were pregnant in the first month of the cal
+preg_start_cdat_heat <- cdat_heat_keep %>%
+    filter((calseq == min(calseq) & calpreg == 1)) 
+
+# identify women who gave birth in the first month of the cal
+birth_start_cdat_heat <- cdat_heat_keep %>% 
+    filter((calseq == min(calseq) & calbirth == 1))  
+
+
+# drop months where women are not at risk of pregnancy -- then merge back in
+preg_start_cdat_heat_keep <- cdat_heat_keep %>%
+    filter(womanid %in% preg_start_cdat_heat$womanid) %>%
+    group_by(womanid) %>%
+    arrange(womanid, calcmc_month) %>%
+    mutate(
+        birth_count = cumsum(calbirth)
+    ) %>%
+    filter(!(calbirth == 0 & birth_count == 0)) %>%
+    filter(!(calbirth == 1 & birth_count == 1)) %>%
+    select(-birth_count)
+
+birth_start_cdat_heat_keep <- cdat_heat_keep %>%
+    filter(womanid %in% birth_start_cdat_heat$womanid) %>%
+    group_by(womanid) %>%
+    arrange(womanid, calcmc_month) %>%
+    filter(!(min(calseq) & calbirth == 1))
+
+#2,125,243
+# remove those cases from the dataset, then merge back in
+cdat_heat_keep <- cdat_heat_keep %>% #2,131,249 --> 1,886,982
+    filter(womanid %notin% preg_start_cdat_heat$womanid) %>%
+    filter(womanid %notin% birth_start_cdat_heat$womanid) %>%
+    full_join(preg_start_cdat_heat_keep) %>%
+    full_join(birth_start_cdat_heat_keep)
+
+save(cdat_heat_keep, file = here("replication/data/clean/cdat_heat_keep.Rdata"))
+
+# create heat-vars over entire observation period (beginning of calendar to exit)
+totalCal <- cdat_heat_keep %>%
+    left_join(heat_monthly) %>%
+    mutate(
+        days = as.numeric(lubridate::days_in_month(yrmo))) %>%
+    group_by(womanid) %>%
+    summarise(
+        total_length = sum(days),
+        mean_wbgtmax = mean(mean_wbgtmax),
+        max_wbgtmax = max(max_wbgtmax),
+        min_wbgtmax = min(min_wbgtmax)
+    ) %>%
+    rename_at(
+        vars(mean_wbgtmax:min_wbgtmax),
+        ~paste0(., "_totalCal")
+    )
+
+# empirical bins (total calendar)
+bins_empirical <- cdat_heat_keep %>%
+    left_join(heat_monthly) %>%
+    select(womanid, yrmo, mean_wbgtmax) %>%
+    ungroup() %>%
+    mutate(
+        # default cuts - within woman
+        bins_woman = cut(mean_wbgtmax, 
+                         breaks = quantile(mean_wbgtmax, probs = seq(0, 1, 1/3)),
+                         right = F, include.lowest = T),
+        bins_woman = factor(bins_woman, ordered = T)
+    ) %>%
+    group_by(womanid, bins_woman) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n / sum(n)) %>%
+    ungroup() %>%
+    pivot_wider(
+        id_cols = "womanid",
+        names_from = "bins_woman",
+        values_from = "freq",
+        values_fill = 0,
+        names_prefix = "bins_"
+    ) %>%
+    janitor::clean_names()
+
+# create monthly heat-vars
+con_heat <- cdat_heat_keep %>%
+    left_join(heat_monthly) %>%
+    rowwise() %>%
+    mutate(
+        year = lubridate::year(yrmo),
+        days = as.numeric(lubridate::days_in_month(yrmo))
+    )  %>%
+    ungroup() %>%
+    mutate(
+        time_f = factor(cal_time),
+        cal_time = as.numeric(cal_time)
+    ) %>%
+    group_by(womanid) %>%
+    arrange(womanid, calcmc_month) %>%
+    mutate(
+        mean_wbgtmax_lag1 = lag(mean_wbgtmax, n = 1),
+        mean_wbgtmax_lag2 = lag(mean_wbgtmax, n = 2),
+        mean_wbgtmax_lag3 = lag(mean_wbgtmax, n = 3),
+        max_wbgtmax_lag1 = lag(max_wbgtmax, n = 1),
+        max_wbgtmax_lag2 = lag(max_wbgtmax, n = 2),
+        max_wbgtmax_lag3 = lag(max_wbgtmax, n = 3),
+        no_fp_use = (sum(calreprod_allevents) == 200 | sum(calreprod_allevents) == 0),
+        no_fp_use = case_when(
+            max(calcontr) == 1 ~ FALSE,
+            T ~ no_fp_use
+        ),
+        fp_failure = case_when(
+            (max(calseq) & conception == 1 & lag(calreprod_allevents) !=0) ~ 1,
+            no_fp_use == TRUE ~ 0,
+            max(conception) == 0 ~ 0,
+            T ~ 0),
+        fp_failure = case_when(
+            max(fp_failure) == 1 ~ 1,
+            T ~ fp_failure
+        ),
+        con_month = month(max(yrmo), label = T),
+        marstat_lbl = fct_recode(marstat_lbl,
+                                 `Not in a union` = "Never married",
+                                 `Not in a union` = "Formerly in union",
+                                 `In monogamous union` = "In union"),
+        floor_lbl = na_if(floor_lbl, "Other"),
+        religion_lbl = na_if(religion_lbl, "Other")
+    ) %>%
+    left_join(totalCal) %>%
+    left_join(bins_empirical)
+
+save(con_heat, file = here("replication/data/clean/con_heat_df.Rdata"))
+
+
+```
+
+
+# Merge heat and pregnancy termination data
+```{r prepare data}
+preg_df <- dhs_cal %>%
+    mutate(
+        term = calterm == 1,
+        birth = calbirth == 1,
+        conceive = conception == 1,
+        con_month = case_when(conceive ~ calcmc_month),
+        birth_month = case_when(birth ~ calcmc_month),
+        term_month = case_when(term ~ calcmc_month),
+        preg_end = term | birth,
+        preg_end_month = case_when(
+            term ~ term_month,
+            birth ~ birth_month,
+            T ~ NA_real_),
+        young = case_when(
+            agemo/12 < 25 ~ "Under 25",
+            T ~ "25 and older"
+        ),
+        first_child = case_when(
+            cheb_moving == 0 ~ "First Birth",
+            T ~ "Has children"
+        ),
+        cheb_moving_f = 
+               case_when(
+                   cheb_moving >=11  ~ "11+",
+                   T ~ as.character(cheb_moving)
+               )
+        ) %>%
+    group_by(womanid) %>%
+    fill(con_month, .direction = "up") %>%
+    arrange(calcmc_month) %>% 
+    mutate(
+        term_check =
+            case_when(
+                calterm == 1 & lag(calpreg) == 0 ~ 1,
+                T ~ 0
+      )
+    ) %>%
+    
+    # this filter restricts to months with the pregnancy outcome
+    filter(!is.na(preg_end_month)) %>%
+    
+    # drop pregnancies that end in births with extra short or extra long durations
+    filter((calpreg_length >=6 & calpreg_length <= 10 & calbirth == 1 ) | calterm == 1) %>%
+    
+    # drop any terminations w/o a pregnancy in the calendar
+    filter(term_check == 0) %>%
+    
+    mutate(
+        trim0_start = con_month - 3,
+        trim0_end = con_month - 1,
+        trim1_end = con_month + 2,
+        trim2_end = trim1_end + 3,
+        ageyrs = floor(agemo/12),
+        calterm_first = case_when(
+            calterm == 1 & calpreg_length >=0 & calpreg_length <= 3 ~ 1,
+            T ~ 0),
+         calterm_second = case_when(
+            calterm == 1 & calpreg_length >3 & calpreg_length <= 6 ~ 1,
+            T ~ 0),
+         calterm_third = case_when(
+            calterm == 1 & calpreg_length >6 & calpreg_length <= 10 ~ 1,
+            T ~ 0)
+    ) %>%
+    # this filter drops the pregnancies where duration/conception is unknown & can't link to residence
+    filter(!is.na(con_month))
+
+# extract woman-year vars before expanding the data by pregnancy
+woman_df <- preg_df %>%
+    select(sample, dhsid, womanid, ends_with("lbl"), 
+           calbirth_total, calterm_total, dobcmc, age5year, cheb) %>%
+    group_by(womanid) %>%
+    slice(1)
+save(woman_df, file = here("replication/data/clean/woman_df.Rdata"))
+
+
+preg_long_df <-  preg_df %>%
+    
+    ungroup() %>%
+    
+    rowwise() %>%
+    
+    # now we expand the pregnancies to include the months leading up to the birth/termination
+    group_by(womanid) %>%
+    mutate(
+        event_id = 1:n()
+    ) %>%
+    group_by(womanid, event_id) %>%
+    slice(rep(1:n(), each = calpreg_length)) %>%
+    group_by(womanid, event_id) %>%
+    mutate(
+        event_index = row_number() - 1,
+        cmc_correct = con_month + event_index,
+        trimester = case_when(
+            cmc_correct > trim0_end & cmc_correct <= trim1_end ~ "First",
+            cmc_correct > trim1_end & cmc_correct <= trim2_end ~ "Second",
+            T ~ "Third")
+    ) %>%
+    select(-calcmc_month) %>%
+    rename(calcmc_month = cmc_correct) %>%
+    ungroup() 
+
+save(preg_long_df, file = here("replication/data/clean/preg_long_df.Rdata"))
+
+
+# create total gestation heat variables
+total_gestation <- inner_join(preg_long_df, heat_monthly) %>%
+    ungroup() %>%
+    rowwise() %>%
+    mutate(
+        days = as.numeric(lubridate::days_in_month(yrmo))
+        ) 
+
+setDT(total_gestation)
+total_gestation <- total_gestation[, 
+                       .( days_duration = sum(days),
+        mean_wbgtmax = mean(mean_wbgtmax),
+        max_wbgtmax = max(max_wbgtmax),
+        min_wbgtmax = min(max_wbgtmax)),
+        by = c("sample","intyear", "womanid", "event_id", "preg_end_month", "con_month", 
+             "birth_month", "term_month", "calterm", "calterm_first",
+             "calterm_second", "calterm_third", "calbirth", "agemo", "ageyrs",
+             "cheb_moving", "cheb_moving_f", "young", "first_child")]
+
+total_gestation <-  total_gestation %>%
+    rename_at(vars(days_duration:min_wbgtmax),
+              function(x) paste0(x,"_TotalGest")
+              )
+
+
+# empirical bins (total calendar)
+bins_empirical_preg <- preg_long_df %>%
+    inner_join(heat_monthly) %>%
+    filter(trimester != "Zero") %>%
+    select(womanid, yrmo, event_id, trimester, mean_wbgtmax) %>%
+    ungroup() %>%
+    mutate(
+        # default cuts - within woman
+        bins_woman = cut(mean_wbgtmax, 
+                         breaks = quantile(mean_wbgtmax, probs = seq(0, 1, 1/3)),
+                         right = F, include.lowest = T),
+        bins_woman = factor(bins_woman, ordered = T)
+    ) %>%
+    group_by(womanid, event_id, bins_woman) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n / sum(n)) %>%
+    ungroup() %>%
+    pivot_wider(
+        id_cols = c("womanid", "event_id"),
+        names_from = "bins_woman",
+        values_from = "freq",
+        values_fill = 0,
+        names_prefix = "bins_"
+    ) %>%
+    janitor::clean_names() %>%
+    rename_at(vars(starts_with("bins")),
+              ~ paste0(.x, "_TotalGest"))
+
+
+# create a unique pregnancy version; wide by trimester
+preg_heat_wide <- inner_join(preg_long_df, heat_monthly) %>%
+    rowwise() %>%
+    mutate(
+        days = as.numeric(lubridate::days_in_month(yrmo)),
+        year = 1900 + as.integer((preg_end_month - 1)/12)
+        ) %>%
+    group_by(womanid, event_id, preg_end_month, con_month, calpreg_length,
+             birth_month, term_month,calterm, calterm_first, calterm_second,
+             calterm_third, calbirth, trimester, agemo, ageyrs, cheb_moving,
+             cheb_moving_f, young, first_child) %>%
+    summarise(
+        days_duration = sum(days),
+        mean_wbgtmax = mean(mean_wbgtmax),
+        max_wbgtmax = max(max_wbgtmax)
+    ) %>%
+    ungroup() %>%
+    pivot_wider(
+        id_cols = c("womanid", "event_id", "preg_end_month", "con_month", "calpreg_length",
+             "birth_month", "term_month", "calterm", "calterm_first", 
+             "calterm_second", "calterm_third",  "calbirth", "young", "first_child",
+             "cheb_moving", "cheb_moving_f", "ageyrs"),
+        names_from = "trimester",
+        values_from = c(days_duration:max_wbgtmax)
+    )  %>%
+    mutate(
+        preg_end_year = 1900 + as.integer((preg_end_month - 1)/12)
+    ) %>%
+    filter(preg_end_year < 2017) %>% # we don't have exposure for all of the pregnancies that end in 2017
+    # merge in total pregnancy heat exposure variables
+    left_join(total_gestation) %>%
+    left_join(bins_empirical_preg) %>%
+
+    # merge back demographic variables
+    left_join(woman_df) %>%
+    mutate(
+        year = preg_end_year,
+        con_year = 1900 + as.integer((con_month - 1)/12),
+        cal_month = con_month - 12*(con_year - 1900),
+        cal_month = month(cal_month, label = T),
+        marstat_lbl = fct_recode(marstat_lbl,
+                                 `Not in a union` = "Never married",
+                                 `Not in a union` = "Formerly in union",
+                                 `In monogamous union` = "In union"),
+        floor_lbl = na_if(floor_lbl, "Other"),
+        religion_lbl = na_if(religion_lbl, "Other")) 
+
+save(preg_heat_wide, file = here("replication/data/clean/preg_heat_wide.Rdata"))
+
+
+
+```
+
+
+# Merge heat and births data
+```{r heat-womanyr}
+load(here("replication/data/clean/birth_panel.Rdata"))
+annual_heat <- readRDS(here("replication/data/clean/annual_heat.Rds"))
+
+
+births_heat_df <- birth_panel %>%
+    inner_join(annual_heat, by = c("dhsid", "year"))
+
+save(births_heat_df, file = here("replication/data/clean/births_heat_df.Rdata"))
+
+```
+

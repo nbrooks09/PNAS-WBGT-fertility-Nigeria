@@ -1,0 +1,1735 @@
+---
+title: "Analyze heat and calendar data"
+author: "Nina Brooks"
+date: "2023-03-08"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Setup
+```{r packages, warning = FALSE, message = FALSE}
+rm(list = ls())
+
+# load libraries and source functions 
+source(here::here("replication/setup.R"))
+options(tibble.print_min = 25)
+options(scipen = 999)
+
+
+```
+
+# Run conception models
+## Main models
+```{r run conception models}
+#load data
+load(here("replication/data/clean/con_heat_df.Rdata"))
+heat_vars <- c("mean_wbgtmax + mean_wbgtmax_lag1 + mean_wbgtmax_lag2", 
+               "mean_wbgtmax_totalCal")
+
+con_results_df <- lapply(heat_vars,
+                         function(x) run_conception_models(
+                             heat_var = x,
+                             df = con_heat)) %>%
+    bind_rows()
+
+save(con_results_df, file = paste0(here("replication/output"), "/con_results_df.Rdata"))
+
+rm(con_results_df)
+```
+
+## Heterogeneous effects models
+```{r run conception split models}
+load(here("replication/data/clean/con_heat_df.Rdata"))
+
+# Create empty lists to store results
+urban_results <- list()
+educ_results <- list()
+young_results <- list()
+fp_failure_results <- list()
+admin1_results <- list()
+floor_results <- list()
+religion_results <- list()
+
+heat_vars <- c("mean_wbgtmax + mean_wbgtmax_lag1 + mean_wbgtmax_lag2", 
+               "mean_wbgtmax_totalCal")
+
+# Loop through each variable
+for (heat_var in heat_vars) {
+    
+form_C <- as.formula(paste0("conception ~ ", heat_var, "+ educlvl_lbl + marstat_lbl  + floor_lbl + religion_lbl +
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+
+
+urban_mod <- feols(form_C, 
+                    cluster = ~dhsid,
+                    split = ~urban_lbl,
+                    data = con_heat)
+
+urban_df <-  lapply(urban_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax")) 
+urban_results[[heat_var]] <- urban_df
+
+
+form_C <- as.formula(paste0("conception ~ ", heat_var, "+ marstat_lbl  + floor_lbl + religion_lbl +
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+educ_mod <- feols(form_C, 
+                   cluster = ~dhsid,
+                   split = ~educlvl_lbl,
+                   data = con_heat)
+
+educ_df <-  lapply(educ_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax")) 
+educ_results[[heat_var]] <- educ_df
+
+form_C <- as.formula(paste0("conception ~ ", heat_var, "+ educlvl_lbl + marstat_lbl  + floor_lbl + religion_lbl +
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+young_mod <- feols(form_C, 
+                  cluster = ~dhsid,
+                  split = ~young,
+                  data = con_heat)
+
+young_df <-  lapply(young_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax"))
+young_results[[heat_var]] <- young_df
+
+
+fp_failure_mod <- feols(form_C, 
+                        cluster = ~dhsid,
+                        split = ~fp_failure,
+                        data = con_heat)
+
+fp_failure_df <-  lapply(fp_failure_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax")) 
+fp_failure_results[[heat_var]] <- fp_failure_df
+
+
+admin1_mod <- feols(form_C, 
+                    cluster = ~dhsid,
+                    split = ~admin1_lbl,
+                    data = con_heat)
+
+admin1_df <-  lapply(admin1_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax")) 
+admin1_results[[heat_var]] <- admin1_df
+
+
+form_C <- as.formula(paste0("conception ~ ", heat_var, "+ educlvl_lbl + marstat_lbl  + religion_lbl +
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+
+
+floor <- split(con_heat, con_heat$floor_lbl)
+
+floor_mod <- feols(form_C, 
+                   cluster = ~dhsid,
+                   split = ~floor_lbl,
+                   data = con_heat)
+
+floor_df <-  lapply(floor_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax")) 
+floor_results[[heat_var]] <- floor_df
+
+
+
+form_C <- as.formula(paste0("conception ~ ", heat_var, "+ educlvl_lbl + marstat_lbl  + floor_lbl + 
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+
+religion <- split(con_heat, con_heat$religion_lbl)
+
+religion_mod <- feols(form_C, 
+                      cluster = ~dhsid,
+                      split = ~religion_lbl,
+                      data = con_heat)
+
+religion_df <-  lapply(religion_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "wbgtmax"))
+religion_results[[heat_var]] <- religion_df
+
+}
+
+rm(con_heat, urban_df, educ_df, young_df, fp_failure_df, admin1_df, floor_df,
+   religion_df)
+urban_results_df <- bind_rows(urban_results, .id = "heat_var")
+educ_results_df <- bind_rows(educ_results, .id = "heat_var")
+young_results_df <- bind_rows(young_results, .id = "heat_var")
+fp_failure_results_df <- bind_rows(fp_failure_results, .id = "heat_var")
+admin1_results_df <- bind_rows(admin1_results, .id = "heat_var")
+floor_results_df <- bind_rows(floor_results, .id = "heat_var")
+religion_results_df <- bind_rows(religion_results, .id = "heat_var")
+
+dfs <- sapply(.GlobalEnv, is.data.frame) 
+print(dfs)
+con_split_results <- bind_rows(mget(names(dfs)[dfs]))
+save(con_split_results, file = paste0(here("replication/output/"), "con_split_results.Rdata"))
+
+remove_dataframes()
+
+```
+
+## Robustness tests 
+```{r run conception robustness tests}
+#load data
+load(here("replication/data/clean/con_heat_df.Rdata"))
+
+
+form_C <- as.formula(paste0("conception ~ mean_wbgtmax + mean_wbgtmax_lag1 + mean_wbgtmax_lag2 + educlvl_lbl + marstat_lbl  + floor_lbl + religion_lbl +
+                                     time_f | con_month + dhsid + year + ageyrs + cheb_moving_f"))
+
+# dropping most distant year of calendar
+con_heat_recall <- con_heat %>%
+    filter(year %notin% c(2003, 2013))
+
+recall_mod <- feols(form_C, 
+               cluster = ~dhsid,
+               data = con_heat_recall)
+
+recall_df <- tidy(recall_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "wbgtmax")) %>%
+    mutate(specification = "linear",
+           model = "Dropping most distant year")
+
+
+# dropping high cheb
+con_heat_cheb_drop <- con_heat %>%
+    filter(cheb_moving <= 11)
+
+drop_cheb_mod <- feols(form_C, 
+                    cluster = ~dhsid,
+                    data = con_heat_cheb_drop)
+
+drop_cheb_df <- tidy(drop_cheb_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "wbgtmax")) %>%
+    mutate(specification = "linear",
+           model = "Dropping parity >11") 
+
+
+# grouping high cheb
+con_heat_cheb_group <- con_heat %>%
+    mutate(cheb_moving = 
+               case_when(
+                   cheb_moving >=11  ~ "11+",
+                   T ~ as.character(cheb_moving)
+               )
+    )
+
+group_cheb_mod <- feols(form_C, 
+                       cluster = ~dhsid,
+                       data = con_heat_cheb_group)
+
+group_cheb_df <- tidy(group_cheb_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "wbgtmax")) %>%
+    mutate(specification = "linear",
+           model = "Grouping parity 11+ together") 
+
+# dropping ages
+con_heat_age_drop <- con_heat %>%
+    filter(ageyrs >=15 & ageyrs <=46)
+
+drop_age_mod <- feols(form_C, 
+                        cluster = ~dhsid,
+                        data = con_heat_age_drop)
+
+drop_age_df <- tidy(drop_age_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "wbgtmax")) %>%
+    mutate(specification = "linear",
+           model = "Restricting to ages 15-46") 
+
+
+con_robust_df <- bind_rows(recall_df, drop_cheb_df, group_cheb_df, drop_age_df)
+save(con_robust_df, file = paste0(here("replication/output"), "/con_robust_df.Rdata"))
+remove_dataframes()
+
+```
+
+
+# Run pregnancy termination models
+## Main models
+```{r run termination models}
+load(here("replication/data/clean/preg_heat_wide.Rdata"))
+
+heat_vars <- c( "mean_wbgtmax", "bins_e")
+
+preg_results_df <- lapply(heat_vars, function(x)
+        run_preg_models(
+            heat_var = x, 
+            trimester = "TotalGest",
+            df = preg_heat_wide)) %>%
+    bind_rows() 
+
+save(preg_results_df, file = paste0(here("replication/output"), "/preg_results_df.Rdata"))
+remove_dataframes()
+ 
+```
+
+## Heterogeneous effects models
+```{r run termination split models}
+
+load(here("replication/data/clean/preg_heat_wide.Rdata"))
+
+# education
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest  + religion_lbl + 
+                                   marstat_lbl  + floor_lbl  |
+                                       dhsid + year + ageyrs + cheb_moving_f"))
+educ_mod <- feols(form_C, 
+                  cluster = ~dhsid,
+                  split = ~educlvl_lbl,
+                  data = preg_heat_wide)
+
+educ_df <-  lapply(educ_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) 
+
+# geopolitical zone
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest + educlvl_lbl + religion_lbl +   marstat_lbl   + floor_lbl  |  dhsid + year + ageyrs + cheb_moving_f"))
+
+admin1_mod <- feols(form_C, 
+                    cluster = ~dhsid,
+                    split = ~admin1_lbl,
+                    data = preg_heat_wide)
+
+admin1_df <-  lapply(admin1_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) 
+
+# religion
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest + educlvl_lbl   + 
+                                   marstat_lbl   + floor_lbl  |
+                                       dhsid + year + ageyrs + cheb_moving_f"))
+
+religion <- split(preg_heat_wide, preg_heat_wide$religion_lbl)
+
+religion_mod <- feols(form_C, 
+                      cluster = ~dhsid,
+                      split = ~religion_lbl,
+                      data = preg_heat_wide)
+
+religion_df <-  lapply(religion_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) 
+
+# age
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest + educlvl_lbl   + religion_lbl +  marstat_lbl  + floor_lbl  | dhsid + year + ageyrs + cheb_moving_f"))
+young_mod <- feols(form_C, 
+                  # family = binomial(link="logit"),
+                   cluster = ~dhsid,
+                   split = ~young,
+                   data = preg_heat_wide)
+
+young_df <-  lapply(young_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) 
+
+# urban
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest + educlvl_lbl   + religion_lbl + 
+                                   marstat_lbl   + floor_lbl  |
+                                       dhsid + year + ageyrs + cheb_moving_f"))
+
+
+urban_mod <- feols(form_C, 
+                   cluster = ~dhsid,
+                   split = ~urban_lbl,
+                   data = preg_heat_wide)
+
+urban_df <-  lapply(urban_mod, tidy, conf.int = T, conf.level = 0.95) %>%
+    bind_rows(.id = "model") %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) 
+
+
+rm(preg_heat_wide)
+dfs <- sapply(.GlobalEnv, is.data.frame) 
+pregloss_split_results <- bind_rows(mget(names(dfs)[dfs]))
+
+save(pregloss_split_results, file = paste0(here("replication/output/"),
+                                           "pregloss_split_results.Rdata"))
+
+remove_dataframes()
+```
+
+## Robustness tests 
+```{r run termination robustness tests}
+#load data
+load(here("replication/data/clean/preg_heat_wide.Rdata"))
+
+
+form_C <- as.formula(paste0("calterm ~  mean_wbgtmax_TotalGest + educlvl_lbl   + religion_lbl +  marstat_lbl   + floor_lbl  |  dhsid + year + ageyrs + cheb_moving_f"))
+
+# dropping most distant year of calendar
+preg_heat_wide_recall <- preg_heat_wide %>%
+    filter(year %notin% c(2003, 2013))
+
+recall_mod <- feols(form_C, 
+                    cluster = ~dhsid,
+                    data = preg_heat_wide_recall)
+
+recall_df <- tidy(recall_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) %>%
+    mutate(
+           specification = "linear",
+           model = "Dropping most distant year") 
+
+
+# dropping high cheb
+preg_heat_wide_cheb_drop <- preg_heat_wide %>%
+    filter(cheb_moving <= 11)
+
+drop_cheb_mod <- feols(form_C, 
+                       cluster = ~dhsid,
+                       data = preg_heat_wide_cheb_drop)
+
+drop_cheb_df <- tidy(drop_cheb_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) %>%
+    mutate(specification = "linear",
+           model = "Dropping parity >11") 
+
+
+# grouping high cheb
+preg_heat_wide_cheb_group <- preg_heat_wide %>%
+    mutate(cheb_moving = 
+               case_when(
+                   cheb_moving >=11  ~ "11+",
+                   T ~ as.character(cheb_moving)
+               )
+    )
+
+group_cheb_mod <- feols(form_C, 
+                        cluster = ~dhsid,
+                        data = preg_heat_wide_cheb_group)
+
+group_cheb_df <- tidy(group_cheb_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) %>%
+    mutate(specification = "linear",
+           model = "Grouping parity 11+ together") 
+
+# dropping ages
+preg_heat_wide_age_drop <- preg_heat_wide %>%
+    filter(ageyrs >=15 & ageyrs <=46)
+
+drop_age_mod <- feols(form_C, 
+                      cluster = ~dhsid,
+                      data = preg_heat_wide_age_drop)
+
+drop_age_df <- tidy(drop_age_mod, conf.int = T, conf.level = 0.95) %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) %>%
+    mutate(specification = "linear",
+           model = "Restricting to ages 15-46") 
+
+
+pregloss_robust_df <- bind_rows(recall_df, drop_cheb_df, group_cheb_df, drop_age_df)
+save(pregloss_robust_df, file = paste0(here("replication/output"), "/pregloss_robust_df.Rdata"))
+
+remove_dataframes()
+```
+
+# Plot results
+## Combine conception & pregnancy loss main results
+```{r combine plots}
+load(here("replication/output/con_results_df.Rdata"))
+load(here("replication/output/preg_results_df.Rdata"))
+
+# change to Cluster & Year FE after new results run
+con_results <- con_results_df %>%
+    filter(term != "mean_wbgtmax_totalCal") %>%
+    filter(model %in% c("All Controls", "Cluster & Year FE")) %>%
+    mutate(
+        model = case_when(
+            model == "Cluster & Year FE" ~ "No Controls",
+            T ~ "Adds Controls"
+        ),
+        estimate = estimate*1000,
+        std.error = std.error*1000,
+        conf.low = conf.low*1000,
+        conf.high = conf.high*1000,
+        term = case_when(
+            term == "mean_wbgtmax" ~ "0",
+            str_detect(term, "lag1") ~ "1",
+            str_detect(term, "lag2") ~ "2",
+            T ~ "WBGT\n(3-month lag)"
+        )
+    ) 
+
+# test equality of coefficients with and without controls
+z <- (con_results$estimate[1] - con_results$estimate[2]) / sqrt(con_results$std.error[1]^2 + con_results$std.error[2]^2)
+
+# Compute the p-value (two-tailed test)
+p_value <- 2 * (1 - pnorm(abs(z)))
+
+
+conception_plot <- con_results %>%
+     ggplot() +
+        geom_point(aes(x = term, y = estimate, color = model),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = term, color = model),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        scale_x_discrete(
+            labels = function(x) str_wrap(x, width = 12)) +
+        scale_y_continuous(
+            breaks = pretty_breaks(8)
+            ) + 
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron(guide = guide_legend(reverse = F)) + 
+        labs(y = "Change in Conception\n(per 1,000 woman-months)",
+             title = "Conception",
+             x = "Lag (month)",
+             color = NULL) +
+    theme_minimal() +
+    theme_paper_cat_x() +
+    theme(
+        legend.position = "bottom",
+        # plot.title = element_text(color = "white"),
+        # axis.text = element_text(color = "white"),
+        # axis.title = element_text(color = "white"),
+        # legend.text = element_text(color = "white"),
+        plot.background = element_blank())
+
+conception_plot
+
+term_results <- preg_results_df %>% 
+    filter(model %in% c("All Controls", "Cluster & Year FE")) %>%
+    filter(str_detect(term, "mean_wbgtmax_TotalGest")) %>%
+    mutate(
+        heat = term,
+        depvar = str_squish(str_remove(depvar, "lhs: ")),
+        model = case_when(
+            model == "Cluster & Year FE" ~ "No Controls",
+            T ~ "Adds Controls"
+        ),
+        estimate = estimate*100,
+        std.error = std.error*100,
+        conf.low = conf.low*100,
+        conf.high = conf.high*100,
+        term = case_when(
+            depvar == "calterm" ~ "Any Termination",
+            str_detect(depvar, "first") ~ "First Trimester",
+            str_detect(depvar, "second") ~ "Second Trimester ",
+            str_detect(depvar, "sec_third") ~ "Second or Third Trimester",
+            T ~ "Third Trimester",
+        )
+    ) %>%
+    filter(specification == "linear") %>%
+    filter(depvar %notin% c("calterm_sec_third")) 
+
+# wald test of equality of coefficients with and without controls
+term_results %>%
+    pivot_wider(
+        id_cols = depvar,
+        names_from = model,
+        values_from = c(estimate, std.error)
+    ) %>%
+    mutate(
+        z = (`estimate_Adds Controls` - `estimate_No Controls`)/(sqrt(`std.error_Adds Controls`^2 + `std.error_No Controls`^2)),
+        p = 2 * (1 - pnorm(abs(z)))
+    )
+
+
+term_plot  <- term_results %>%
+    ggplot() +
+        geom_point(aes(x = term, y = estimate, color = model),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = term, color = model),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+        scale_y_continuous(
+            breaks = pretty_breaks(8)
+            ) + 
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron(guide = guide_legend(reverse = F)) + 
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             title = "Pregnancy Termination",
+             subtitle = "(Spontaneous and Induced Terminations)",
+             x = NULL,
+             color = NULL) +
+    theme_minimal() +
+    theme_paper_cat_x() +
+    theme(
+        legend.position = "bottom",
+        # plot.title = element_text(color = "white"),
+        # plot.subtitle = element_text(color = "white"),
+        # axis.text = element_text(color = "white"),
+        # axis.title = element_text(color = "white"),
+        # legend.text = element_text(color = "white"),
+        plot.background = element_blank())
+    
+
+con_term_p <- conception_plot + term_plot +
+    plot_annotation(
+        tag_prefix = "(",
+        tag_suffix = ")",
+        tag_levels = "a") +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom",
+          plot.background = element_blank(),
+          plot.tag = element_text(color = "white"))
+
+ggsave(con_term_p, 
+       filename = here("replication/figures/con_term_combined.pdf"),
+       width = 9.5, height = 5, units = "in")
+
+
+
+```
+
+
+## Conception Heterogeneous Results
+```{r plot heterogenous conception results}
+load(here("replication/output/con_split_results.Rdata"))
+
+con_split_results_df <- con_split_results %>%
+    mutate(
+        split_var = str_extract(model, "(?<=sample: ).*")
+    ) %>%
+    filter(heat_var != "mean_wbgtmax_totalCal") %>%
+    mutate(     
+        estimate = estimate*1000,
+        std.error = std.error*1000,
+        conf.low = conf.low*1000,
+        conf.high = conf.high*1000,
+        term = case_when(
+            term == "mean_wbgtmax" ~ "0",
+            str_detect(term, "lag1") ~ "1",
+            str_detect(term, "lag2") ~ "2",
+            T ~ "WBGT\n(3-month lag)"
+        ),
+        term = factor(term, ordered = T,
+                      levels = c("0", "1", "2"),
+                      labels = c("0", "1", "2"))
+    )
+        
+
+
+# urban-rural
+urban_p <- con_split_results_df %>%
+    filter(str_detect(model, "urban_lbl")) %>% 
+    mutate(
+        urban = factor(split_var, ordered = T,
+                       levels = c("Urban", "Rural"),
+                       labels = c("Urban", "Rural"))
+    ) %>%
+    ggplot() +
+       geom_point(aes(x = urban, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = urban, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(
+             breaks = pretty_breaks(6)
+             ) +
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+             title = "Urban/Rural",
+             x = NULL,
+             color = "Lag (month)") +
+    theme_paper_cat_x() +
+    theme(
+        legend.position = "bottom",
+         plot.title.position = "plot"
+    )
+
+urban_p
+
+
+# education
+
+educ_p <- con_split_results_df %>%
+    filter(str_detect(model, "educlvl")) %>%
+    mutate(
+        educ = factor(split_var, ordered = T,
+                      levels = c("No education", "Primary", 
+                                 "Secondary", "Higher"),
+                      labels = c("No education", "Primary", 
+                                 "Secondary", "Higher")
+                      )
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = educ, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = educ, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(
+             breaks = pretty_breaks(8)
+             ) +
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+            title = "Education",
+            x = NULL,
+            color = "Lag (month)") +
+    theme_paper_cat_x() +
+    theme(
+        legend.position = "bottom",
+         plot.title.position = "plot"
+    )
+
+educ_p
+
+# young
+young_p <- con_split_results_df %>%
+    filter(str_detect(model, "young")) %>%
+    mutate(
+        young = factor(split_var)
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = young, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = young, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(breaks = pretty_breaks(8) ) + 
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+             title = "Age",
+             x = NULL,
+             color = "Lag (month)") +
+        theme_paper_cat_x() +
+        theme(legend.position = "bottom",
+               plot.title.position = "plot")
+        
+
+young_p
+
+
+# contraceptive failure
+fp_failure_p <- con_split_results_df %>%
+    filter(str_detect(model, "failure")) %>%
+    mutate(
+        fp_failure = factor(split_var,
+                            levels = c("0", "1"),
+                            labels = c("No Contraceptive Use",
+                                       "Used Contraceptives"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = fp_failure, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = fp_failure, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(
+             breaks = pretty_breaks(7)
+             ) +
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_x_discrete(
+            limits = rev,
+            labels = function(x) str_wrap(x, width = 15)) +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+            title = "Contraceptive Failure",
+            x = NULL,
+            color = "Lag (month)") +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "bottom",
+            plot.title.position = "plot"
+        )
+
+fp_failure_p
+
+
+# religion
+religion_p <- con_split_results_df %>%
+    filter(str_detect(model, "religion")) %>%
+    mutate(
+       religion = factor(split_var)
+    ) %>%
+    ggplot() +
+           geom_point(aes(x = religion, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = religion, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(
+             breaks = pretty_breaks(12)
+             ) +
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_x_discrete(limits = rev) +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+            title = "Religion",
+            x = NULL,
+            color = "Lag (month)") +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "bottom",
+             plot.title.position = "plot"
+        )
+
+religion_p
+
+
+
+# admin 1
+
+admin1_p <- con_split_results_df %>%
+    filter(str_detect(model, "admin")) %>%
+    mutate(
+        admin1 = factor(split_var, 
+                        levels = c("North Central","North East",
+                                   "North West", "South East",
+                                   "South South","South West"),
+                        labels = c("North Central","North East",
+                                   "North West", "South East",
+                                   "South South","South West"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = admin1, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = admin1, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        theme_minimal() +
+        scale_y_continuous(
+             breaks = pretty_breaks(6)
+             ) +
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron() + 
+        labs(
+            y = "Change in Conception\n(per 1,000 woman-months)",
+            title = "Geopolitical Zone",
+            x = NULL,
+            color = "Lag (month)") +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "bottom",
+             plot.title.position = "plot"
+        )
+admin1_p
+
+
+# combined plot: urban, educ, first birth, fp failure, admin 1
+design <- "
+    1111
+    2222
+    3456
+"
+
+conception_heterogeneity <- (educ_p + admin1_p + religion_p  + urban_p + fp_failure_p + young_p ) +
+    plot_layout(
+        design = design,
+        guides = "collect") +
+    plot_annotation(
+        tag_prefix = "(",
+        tag_suffix = ")",
+        tag_levels = "a") &
+    theme(legend.position = "bottom")
+
+conception_heterogeneity
+ggsave(conception_heterogeneity, 
+       filename = here("replication/figures/conception_heterogeneity.pdf"),
+       width = 11, height = 9, units = "in")
+
+ 
+```
+
+## Contraceptive Failure
+```{r contraceptive failture}
+
+con_heat <- con_heat %>%
+    select(womanid, calcmc_month, calreprod_allevents, conception, calcontr, 
+           fp_failure, no_fp_use, calseq) %>%
+    group_by(womanid) %>%
+    arrange(womanid, calcmc_month) %>%
+    mutate(
+        method_fail = case_when(
+            fp_failure == 1 & conception == 1 ~ lag(calreprod_allevents),
+            T ~ NA_integer_)
+        ) 
+
+tab(con_heat, method_fail)
+
+```
+
+## Pregnancy Termination Heterogeneous Results
+```{r plot heterogenous termination results}
+load(here("replication/output/pregloss_split_results.Rdata"))
+
+pregloss_split_results_df <- pregloss_split_results %>%
+    mutate(
+        term = str_extract(model, "(?<=sample: ).*"),
+        estimate = estimate*100,
+        std.error = std.error*100,
+        conf.low = conf.low*100,
+        conf.high = conf.high*100,
+    )
+
+
+# urban-rural
+urban_p <- pregloss_split_results_df %>%
+    filter(str_detect(model, "urban_lbl")) %>%
+    mutate(
+        urban = factor(term, ordered = T,
+                       levels = c("Urban", "Rural"),
+                       labels = c("Urban", "Rural"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = urban, y = estimate, color = urban),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low,
+                          ymax = conf.high,
+                          x = urban, color = urban),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        theme_minimal() +
+        scale_y_continuous(
+            breaks = pretty_breaks(6)
+            ) +
+        guides(y = "axis_truncated") +
+        scale_color_tron( guide = guide_legend(reverse = T) )+
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             x = NULL,
+             title = "Urban/Rural",
+             color = NULL) +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "none"
+        )
+urban_p
+
+# education
+educ_p <- pregloss_split_results_df %>%
+    filter(str_detect(model, "educlvl_lbl")) %>%
+    mutate(
+        educ = factor(term, ordered = T,
+                      levels = c("No education", "Primary", 
+                                 "Secondary", "Higher"),
+                      labels = c("No education", "Primary", 
+                                 "Secondary", "Higher"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = educ, y = estimate, color = educ),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low,
+                          ymax = conf.high,
+                          x = educ, color = educ),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        theme_minimal() +
+        scale_y_continuous(
+            breaks = pretty_breaks(6)
+            ) +
+        guides(y = "axis_truncated") +
+        scale_color_tron( guide = guide_legend(reverse = F))+
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             x = NULL,
+             title = "Education",
+             color = NULL) +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "none"
+        )
+
+educ_p
+
+# young
+young_p <- pregloss_split_results_df %>%
+    filter(str_detect(model, "young")) %>%
+    mutate(
+        young = factor(term)
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = young, y = estimate, color = young),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low,
+                          ymax = conf.high,
+                          x = young, color = young),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        theme_minimal() +
+        scale_y_continuous(
+            breaks = pretty_breaks(8)
+            ) +
+        guides(y = "axis_truncated") +
+        scale_color_tron( guide = guide_legend(reverse = F))+
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             x = NULL,
+             title = "Age",
+             color = NULL) +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "none"
+        )
+
+
+young_p
+
+
+# religion
+religion_p <- pregloss_split_results_df %>%
+    filter(str_detect(model, "religion")) %>%
+    mutate(
+        religion = factor(term),
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = religion, y = estimate, color = religion),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low,
+                          ymax = conf.high,
+                          x = religion, color = religion),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        theme_minimal() +
+        scale_y_continuous(
+            breaks = pretty_breaks(6)
+            ) +
+        guides(y = "axis_truncated") +
+        scale_color_tron(guide = guide_legend(reverse = T) )+
+        labs(
+            y = "Change in Termination\n(per 100 pregnancies)",
+            x = NULL,
+            title = "Religion",
+            color = NULL) +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "none"
+        )
+
+religion_p
+
+# admin 1
+admin1_p <- pregloss_split_results_df %>%
+    filter(str_detect(model, "admin")) %>%
+    mutate(
+        admin1 = factor(admin1, ordered = T,
+                        levels = c("North Central","North East",
+                                   "North West", "South East",
+                                   "South South","South West"),
+                        labels = c("North Central","North East",
+                                   "North West", "South East",
+                                   "South South","South West"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = admin1, y = estimate, color = admin1),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low,
+                          ymax = conf.high,
+                          x = admin1, color = admin1),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        theme_minimal() +
+        scale_y_continuous(
+            breaks = pretty_breaks(6)
+            ) +
+        guides(y = "axis_truncated") +
+        scale_color_tron( guide = guide_legend(reverse = F) )+
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             x = NULL,
+             title = "Geopolitical Zone",
+             color = NULL) +
+        theme_paper_cat_x() +
+        theme(
+            legend.position = "none"
+        )
+
+admin1_p
+
+
+# combined plot: urban, educ, first birth, admin 1
+design <- "
+    111
+    222
+    345
+"
+preg_loss_heterogeneity <- educ_p + admin1_p + religion_p  + young_p + urban_p + 
+    plot_layout(design = design) +  
+    plot_annotation(
+        tag_prefix = "(",
+        tag_suffix = ")",
+        tag_levels = "a") &
+    theme(
+        plot.tag.position = c(0, 1)
+    )
+
+ggsave(preg_loss_heterogeneity,
+       filename = here("replication/figures/preg_loss_heterogeneity.pdf"),
+       width = 7, height = 8, units = "in")
+```
+
+
+
+# Supplementary Information
+## Survival Data Structure Diagram
+```{r censored data}
+set.seed(15)
+df <- data.frame(
+    id = factor(1:10),
+    months = sample(1:60, 10, replace = T),
+    outcome = sample(c("Conception", "Censor"), 10, replace = T, prob = c(.45, .55))
+) %>%
+    mutate(
+        months = case_when(
+            outcome == "Censor" & months >=40 ~ 60,
+            T ~ months
+        )
+    ) %>%
+    slice(2:3) %>%
+    mutate(
+        id = factor(row_number())
+    )
+
+survival_demo <- df %>%
+    ggplot(aes(x = months, y = id)) +
+        geom_segment(aes(x = 0, xend = months, 
+                         y = id, yend = id), color = "black") +
+        geom_point(aes(shape = outcome, color = outcome), size=4) +
+        scale_x_continuous(breaks = seq(0,60, 5),
+                           limits = c(0, 61.3),
+                           expand = c(0, 0)) +
+        scale_y_discrete(limits = rev) +
+        scale_color_tron() +
+        labs(
+            x = "Time",
+            y = "Person",
+            color = NULL,
+            shape = NULL
+            ) +
+        theme(
+            legend.position = "bottom",
+            # axis.text = element_text(color = "white"),
+            # axis.title = element_text(color = "white"),
+            # legend.text = element_text(color = "white"),
+            # legend.title = element_text(color = "white"),
+            axis.line.x.bottom = element_line(color = "grey50"),
+            axis.line.y.left = element_line(color = "grey50"),
+            panel.grid.minor = element_blank(),
+            panel.grid.major.y =  element_blank(),
+            panel.grid.major.x = element_line(colour = "grey50"),
+            legend.key = element_rect(fill='transparent', color=NA),
+            panel.background = element_rect(fill='transparent', color=NA),
+            plot.background = element_rect(fill='transparent', color=NA),
+            legend.background = element_rect(fill='transparent', color=NA),
+            legend.box.background = element_rect(fill='transparent', color=NA)
+          )
+
+survival_demo
+
+ggsave(survival_demo, 
+       filename = here("replication/figures/survival_demo_paper.pdf"),
+       width = 6, height = 4, units = "in")
+
+```
+
+## Summary Statistics Table
+```{r summary table}
+heat_monthly <- readRDS(here("replication/data/clean/wbgtmax_monthly_ng.Rds"))
+load(here("replication/data/clean/cdat_heat_keep.Rdata"))
+load(here("replication/data/clean/woman_df.Rdata"))
+load(here("replication/data/clean/con_heat_df.Rdata"))
+load(here("replication/data/clean/preg_heat_wide.Rdata"))
+load(here("replication/data/clean/con_heat_df.Rdata"))
+load(here("replication/data/clean/births_heat_df.Rdata"))
+
+
+
+heat_tab <- heat_monthly %>%
+    mutate(
+        year = year(yrmo)
+    ) %>%
+    filter(year >= 2003) %>%
+    select(mean_wbgtmax) %>%
+        tbl_summary(
+        missing = "no",
+        statistic = list(
+            all_continuous() ~ "{mean} ({sd})"
+        ),
+        digits = all_continuous() ~ 2,
+        label = list(
+             mean_wbgtmax ~ "Monthly WBGTmax (°C)"
+             )
+    ) %>%
+    modify_header(
+        stat_0 = "**Value**"
+    )
+    
+    
+attr(woman_df$fptypnow_lbl, "label") <- "Current FP use by method type"
+
+woman_tab <- woman_df %>%
+    ungroup() %>%
+    select(educlvl_lbl, cheb,fptypnow_lbl, religion_lbl, marstat_lbl, urban_lbl, admin1_lbl) %>%
+    mutate(
+        marstat_lbl = fct_recode(marstat_lbl, "In monogamous union" = "In union") 
+    ) %>%
+    tbl_summary(
+        missing = "no",
+        statistic = list(
+            all_continuous() ~ "{mean} ({sd})"
+        ),
+        digits = all_continuous() ~ 1,
+        label = list(
+             cheb ~ "Children ever born",
+             religion_lbl ~ "Religion",
+            # floor_lbl ~ "Floor Material",
+             marstat_lbl ~ "Marital Status"
+             )
+    ) %>%
+    modify_header(
+        stat_0 = "**Value**"
+    )
+   
+
+con_outcome_tab <- con_heat %>%
+    ungroup() %>%
+    select(conceive) %>%
+    mutate_all(as.numeric) %>%
+    mutate(
+        conceive = conceive*1000
+    ) %>%
+    tbl_summary(
+        type = list(everything() ~ "continuous"),
+        missing = "no",
+        statistic = list(
+            all_continuous() ~ "{mean} ({sd})"
+        ),
+        digits = all_continuous() ~ 1,
+        label = list(
+            conceive ~ "Conceptions (per 1,000 woman-months)"
+            )
+    ) %>%
+    modify_header(
+        stat_0 = "**Value**"
+    )
+
+preg_outcomes_tab <- preg_heat_wide %>%
+    ungroup() %>%
+    select(calterm, calterm_first, calterm_second, calterm_third) %>%
+    mutate_all(~.x*100) %>%
+    tbl_summary(
+        type = list(everything() ~ "continuous"),
+        missing = "no",
+        statistic = list(
+            all_continuous() ~ "{mean} ({sd})"
+        ),
+        digits = all_continuous() ~ 1,
+        label = list(
+            # calpreg_total ~ "Pregnancies",
+           # calbirth ~ "Births (per 100 pregnancies)",
+            calterm ~ "Pregnancy Terminations (per 100 pregnancies)",
+            calterm_first ~ "First Trimester Terminations (per 100 pregnancies)",
+            calterm_second ~ "Second Trimester Terminations (per 100 pregnancies)",
+            calterm_third ~ "Third Trimester Terminations (per 100 pregnancies)"
+            )
+    ) %>%
+    modify_header(
+        stat_0 = "**Value**"
+    )
+
+births_summary <-  births_heat_df %>%
+    select(birth) %>%
+    mutate_all(~.x*100) %>%
+    tbl_summary(
+        type = list(everything() ~ "continuous"),
+        missing = "no",
+        statistic = list(
+            all_continuous() ~ "{mean} ({sd})"
+        ),
+        digits = all_continuous() ~ 1,
+        label = list(
+            birth ~ "Births (per 100 pregnancies)"
+            )
+    ) %>%
+    modify_header(
+        stat_0 = "**Value**"
+    )
+    
+
+women <- nrow(woman_df)
+woman_months <- nrow(con_heat)
+clusters <- length(unique(con_heat$dhsid))
+
+sample_size <- tibble("Women" = women,
+                      `Woman-Months` = woman_months,
+                      `DHS Clusters` = clusters)
+
+sample_size_tab <- sample_size %>%
+    tbl_summary(
+        type = list(everything() ~ "continuous"),
+        statistic = list(
+            everything() ~ "{mean}"
+        )
+    ) %>%
+     modify_header(
+        stat_0 = "**Value**"
+    )
+
+summary_table <- tbl_stack(list(con_outcome_tab, preg_outcomes_tab, births_summary, heat_tab, woman_tab, sample_size_tab)) %>%
+    modify_footnote(everything() ~ NA)
+
+summary_table %>%
+    as_kable_extra(
+         booktabs = T,
+         format = "latex",
+         label = "tab:summary",
+         caption = "Descriptive statistics for independent and dependent variables",
+         linesep = ""
+    ) %>%
+    kableExtra::kable_styling(full_width = F) %>%
+    kableExtra::pack_rows("Fertility Outcomes", 1, 6) %>%
+    kableExtra::pack_rows("Heat", 7, 7) %>%
+    kableExtra::pack_rows("Demographics", 8, 37) %>%
+    kableExtra::pack_rows("Sample Sizes", 38, 40) %>%
+    footnote(general = "Outcome and demographic data come from the DHS. Heat data are authors own construction as described in the Materials and Methods. Continuous variables are summarized as means with standard deviations in parentheses. Binary and categorical variables are reported as the number of observations within each category and the percentage in parentheses. Conceptions are reported as per 1,000 woman-months, pregnancy terminations (a joint indicator of spontaneous and induced terminations) are reported as per 100 pregnancies, and births are reported as per 100 pregnancies. All demographics are summarized at the woman-level.",
+             threeparttable = T) %>%
+    kableExtra::save_kable(file = here("replication/tables/summary_tab.tex"))
+
+
+
+```
+
+## Conception Robustness
+
+```{r conception robustness}
+load(here("replication/output/con_results_df.Rdata"))
+load(here("replication//output/con_robust_df.Rdata"))
+
+
+con_results_combined <-  con_results_df %>%
+    bind_rows(con_robust_df) %>%
+    mutate(
+        heat = term,
+        heat = case_when(
+            heat == "mean_wbgtmax" ~ "0",
+            str_detect(heat, "lag1") ~ "1",
+            str_detect(heat, "lag2") ~ "2",
+            T ~ "WBGT\n(3-month lag)"
+        ),
+        heat = factor(heat, ordered = T,
+                      levels = c("0", "1", "2"),
+                      labels = c("0", "1", "2")),
+        group = case_when(
+            model == "All Controls" ~ "Main Result",
+            T ~ "Alternative specification"
+        )
+    ) %>%
+    filter(heat !=  "mean_wbgtmax_totalCal") %>%
+    select(-term) %>%
+    rename(term = model) %>%
+    mutate(order = 1:n())
+   
+
+
+con_robustness <-  con_results_combined %>%
+    ggplot() +
+        geom_point(aes(x = heat, y = estimate, color = term),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = heat, color = term),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+        scale_y_continuous(
+            breaks = pretty_breaks(5)
+            ) + 
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron() + 
+        labs(y = "Change in Conception\n(per 1,000 woman-months)",
+             x = "Lag (months)",
+             color = NULL) +
+    theme_minimal() +
+    theme_paper() +
+    theme(
+        legend.position = "bottom")
+
+con_robustness
+ggsave(con_robustness, 
+       filename = here("replication/figures/con_robustness.pdf"),
+       width = 5, height = 4, units = "in")
+
+
+```
+
+## Pregnancy Termination Robustness
+```{r pregnancy loss bins}
+load(here("replication/output/preg_results_df.Rdata"))
+
+# plot coefficients from wbgtmax specifications
+preg_results_df <-  preg_results_df %>%
+    filter(model %in% c("All Controls", "Cluster & Year FE")) %>%
+    mutate(
+        heat = term,
+        depvar = str_squish(str_remove(depvar, "lhs: ")),
+        model = case_when(
+            model == "Cluster & Year FE" ~ "No Controls",
+            T ~ "Adds Controls"
+        ),
+        term = case_when(
+            depvar == "calterm" ~ "Any  Termination",
+            str_detect(depvar, "first") ~ "First Trimester",
+            str_detect(depvar, "second") ~ "Second Trimester",
+            T ~ "Third Trimester",
+        )
+    )
+
+
+# plot coefficients from bin specifications
+term_plot_bins <- preg_results_df %>%
+    filter(specification == "Bins (emp)" & depvar == "calterm") %>% 
+    mutate(
+          heat = case_when(
+            heat == "bins_27_7_31_6_TotalGest" ~ "Proportion Days [27.8-31.6°C]",
+            heat == "bins_25_8_27_7_TotalGest" ~ "Proportion Days [25.9-27.8°C)"
+        ),
+        term = factor(heat, ordered = T,
+                      levels = c("Proportion Days [25.9-27.8°C)", 
+                      "Proportion Days [27.8-31.6°C]"))
+    ) %>%
+    ggplot() +
+        geom_point(aes(x = heat, y = estimate, color = model),
+                   position=position_dodge(.9)) +
+        geom_errorbar(aes(ymin = conf.low, 
+                          ymax = conf.high,
+                          x = heat, color = model),
+                      width = 0,
+                      position=position_dodge(.9)) +
+        scale_y_continuous() + 
+        guides(y = "axis_truncated") +
+        geom_hline(yintercept = 0,
+                   linetype = "dashed") +
+        scale_color_tron(
+            guide = guide_legend(reverse = F)
+            ) + 
+        labs(y = "Change in Termination\n(per 100 pregnancies)",
+             x = NULL,
+             color = NULL) +
+    theme_minimal() +
+    theme_paper_cat_x() +
+    theme(
+        legend.position = "bottom")
+
+term_plot_bins
+
+ggsave(term_plot_bins, 
+       filename = here("replication/figures/term_plot_bins.pdf"),
+       width = 6, height = 4, units = "in")
+    
+```
+
+
+```{r preg loss robustness}
+load(here("replication/output/preg_results_df.Rdata"))
+load(here("replication/output/pregloss_robust_df.Rdata"))
+
+
+preg_results_combined <-  preg_results_df %>%
+     bind_rows(pregloss_robust_df) %>%
+    mutate(
+        heat = term,
+        depvar = str_squish(str_remove(depvar, "lhs: ")),
+        depvar = case_when(
+            is.na(depvar) ~ "calterm",
+            T ~ depvar
+        ),
+        group = case_when(
+            model == "All Controls" ~ "Main Result",
+            T ~ "Alternative specification"
+        )
+    ) %>%
+    filter(specification == "linear" & depvar == "calterm") %>%
+    filter(model %notin% c("Demographic Controls", "No Controls")) %>%
+    filter(str_detect(heat, "mean_wbgtmax_TotalGest")) %>%
+    select(-term) %>%
+    rename(term = model) %>%
+    mutate(order = 1:n())
+   
+
+
+preg_term_robustness <-  preg_results_combined %>%
+    mutate(term = fct_reorder(term, desc(order))) %>%
+    ggplot() +
+        geom_point(aes(y = term, x = estimate, color = group),
+                   position=position_dodge(.9)) +
+        geom_errorbarh(aes(xmin = conf.low, 
+                          xmax = conf.high,
+                          y = term, color = group),
+                      height = 0,
+                      position=position_dodge(.9)) +
+        #coord_trans(x = 'log10') +
+        scale_y_discrete(labels = function(x) str_wrap(x, width = 15)) +
+        scale_x_continuous(
+            breaks = pretty_breaks(5)
+            ) + 
+        #guides(y = "axis_truncated") +
+        geom_vline(xintercept = 0,
+                   linetype = "dashed") +
+        geom_vline(xintercept = preg_results_combined$estimate[preg_results_combined$group == "Main Result"], linetype = "dotted",
+                   color = "grey60") +
+        scale_color_tron(
+            guide = guide_legend(reverse = T)
+            ) + 
+        labs(x = "Change in Termination\n(per 100 pregnancies)",
+             y = NULL,
+             color = NULL) +
+    theme_minimal() +
+    theme_paper() +
+    theme(
+        legend.position = "bottom")
+
+preg_term_robustness
+ggsave(preg_term_robustness, 
+       filename = here("replication/figures/preg_term_robustness.pdf"),
+       width = 5, height = 4, units = "in")
+
+
+```
+
+## Birth History Analysis
+```{r heat rel birth history}
+load(here("replication/data/clean/births_heat_df.Rdata"))
+
+options("modelsummary_format_numeric_latex" = "plain")
+
+# outcomes: birth
+wmncalyr_1yrInc <- feols(birth  ~ mean_wbgtmax +
+                       educlvl_lbl +  marstat_lbl +  floor_lbl + religion_lbl| dhsid + year + cheb_moving + ageyrs,
+                   cluster ~ dhsid,
+                  # family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=1))
+
+wmncalyr_1yrExc <- feols(birth  ~  mean_wbgtmax_1yr +
+                       educlvl_lbl +  marstat_lbl + floor_lbl+ religion_lbl | dhsid + year + cheb_moving + ageyrs,
+                   cluster ~ dhsid,
+                  # family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=2 & year >= 1984))
+
+wmncalyr_2yr <- feols(birth  ~ mean_wbgtmax_2yr +
+                       educlvl_lbl +  marstat_lbl +  floor_lbl + religion_lbl | dhsid + year + cheb_moving + ageyrs,
+                   cluster ~ dhsid,
+                   #family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=3 & year >= 1985))
+
+wmncalyr_5yr <- feols(birth ~ mean_wbgtmax_5yr +
+                       educlvl_lbl + marstat_lbl + floor_lbl + religion_lbl| dhsid + year + cheb_moving + ageyrs,
+                   cluster ~ dhsid,
+                  # family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=6 & year >= 1988))
+
+
+# woman FE
+
+wmncalyr_1yrExcFE <- feols(birth  ~ mean_wbgtmax_1yr | 
+                        womanid + year + ageyrs +  cheb_moving,
+                   cluster ~ dhsid,
+                  # family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=2 & year >= 1984))
+
+wmncalyr_2yrFE <- feols(birth  ~ mean_wbgtmax_2yr |
+                         womanid + year  + ageyrs +  cheb_moving,
+                    cluster ~ dhsid,
+                  # family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=3 & year >= 1985))
+
+
+wmncalyr_5yrFE <- feols(birth ~ mean_wbgtmax_5yr  | 
+                     womanid + year  + ageyrs +  cheb_moving,
+                    cluster ~ dhsid,
+                   #family = binomial(link="logit"),
+                   data = births_heat_df %>% filter(resideintyr>=6 & year >= 1988))
+
+cm <- c('mean_wbgtmax_1yr' = 'Mean WBGTmax (1-year lag)',
+        'mean_wbgtmax_2yr' = 'Mean WBGTmax (2-year lag)',
+        'mean_wbgtmax_5yr' = 'Mean WBGTmax (5-year lag)')
+
+f <- function(x) format(round(x, 3), big.mark=",")
+
+gm <- list(
+  list("raw" = "nobs", "clean" = "N", "fmt" = f),
+  list("raw" = "FE: dhsid", "clean" = "Cluster FE", "fmt" = f),
+  list("raw" = "FE: womanid", "clean" = "Woman FE", "fmt" = f),
+  list("raw" = "FE: year", "clean" = "Year FE", "fmt" = f),
+  list("raw" = "FE: cheb_moving", "clean" = "Parity FE", "fmt" = f),
+  list("raw" = "FE: ageyrs", "clean" = "Age FE", "fmt" = f))
+
+modelsummary(list(wmncalyr_1yrExc, 
+                  wmncalyr_1yrExcFE, 
+                  wmncalyr_2yr, 
+                  wmncalyr_2yrFE,
+               wmncalyr_5yr,
+               wmncalyr_5yrFE
+               ),
+             output = "latex",
+            # exponentiate = TRUE,
+             title = "Effect of lagged WBGTmax on births",
+             stars = T,
+             coef_map = cm,
+             gof_map = gm) %>%
+     # kableExtra::kable_styling(
+     #    font_size = 11,
+     #    full_width = F,
+     #    latex_options = c("HOLD_position")) %>%
+    footnote(general = "Data come from Nigeria DHS survey waves with complete birth histories, GPS data and information on length of residency (1990, 2003, 2008, 2018) spanning 1983-2016. The outcome “gave birth” is defined as a binary variable that equals 1 if she gave birth in a given year and 0 if not. Temperature is averaged across 1-year, 2-year and 5-year cumulative lags preceding each year. Linear probability models were estimated, restricting the sample to women who have lived in their current residence for at least the length of time covered by the lag. For each lag, we estimate models 1) including DHS cluster and year fixed effects, as well as the same demographic and socioeconomic controls used in the main specifications and 2) including woman and year fixed effects controlling for age and parity (the only woman-level time-varying characteristics available). Standard errors are adjusted for clustering at the DHS cluster level." ,
+             threeparttable = TRUE, escape = FALSE, footnote_as_chunk = TRUE) %>%
+    kableExtra::save_kable(file = here("replication/tables/bh_lag_models.tex"))
+
+```
+
+## Pregnancy Termination Residuals
+```{r preg los residuals analysis}
+# # Checking residuals from terminations
+# library(binsreg)
+load(here("replication/data/clean/preg_heat_wide.Rdata"))
+
+# # function to extract binned data from binscatter output
+# extractBinData <- function(data, groupvar, binsreg_result){
+#     levels <- unique(levels(data[[{{ groupvar }}]]))
+#     count_levels <- length(levels)
+#     
+#     bin_df <- list()
+#     for (i in 1:count_levels){
+#         #browser()
+#         dots <- binsreg_result$data.plot[[i]]$data.dots
+#         ci <- binsreg_result$data.plot[[i]]$data.ci
+#         bin_df[[i]] <- left_join(dots, ci) 
+#     }
+#     
+#     bin_df <- bind_rows(bin_df)
+#     return(bin_df)
+# }
+
+small <- preg_heat_wide %>% dplyr::select(sample, dhsid, year, womanid, calterm, ageyrs , 
+                                   educlvl_lbl , religion_lbl ,
+                          marstat_lbl, cheb_moving ,floor_lbl, cheb_moving,
+                          starts_with("mean"), starts_with("t30")) %>%
+    na.omit %>%
+    filter(floor_lbl != "Other") %>%
+    filter(religion_lbl != "Other") %>%
+    mutate(
+        floor_lbl = fct_drop(floor_lbl),
+        religion_lbl = fct_drop(religion_lbl),
+        marstat_lbl = factor(marstat_lbl),
+        marstat_lbl = fct_recode(marstat_lbl,
+                                 `Not in a union` = "Never married",
+                                 `Not in a union` = "Formerly in union",
+                                 `In monogamous union` = "In union")
+    )
+        
+ 
+sapply(small, function(x) sum(is.na(x)))
+
+# run calterm on all FE ---------------------------------------------
+mod <- feols(calterm ~  1 | dhsid + year,
+             cluster = ~dhsid,
+             data = small)
+
+
+small$resid <- mod$residuals
+
+resid_mods <- feols(resid ~ sw(educlvl_lbl, floor_lbl, cheb_moving, 
+                               marstat_lbl,religion_lbl, ageyrs),
+                    cluster = ~dhsid,
+                    data = small)
+
+custom_labels <- list(
+  educlvl_lbl = levels(small$educlvl_lbl),
+  floor_lbl = levels(small$floor_lbl),
+  cheb_moving = c("(Intercept)", "Parity"),
+  marstat_lbl = levels(small$marstat_lbl),
+  religion_lbl = levels(small$religion_lbl),
+  ageyrs = c("(Intercept)",  "Age in Years")
+)
+
+titles <- list(
+  educlvl_lbl = "Educational Attainment",
+  floor_lbl = "Wealth Proxy (floor material)",
+  cheb_moving = "Parity",
+  marstat_lbl = "Marital Status",
+  religion_lbl = "Religion",
+  ageyrs = "Age in Years"
+)
+
+
+
+plot_resid_coefs <- function(mod, term_lab, title_lab){
+    tidy_mod <- tidy(mod) %>%
+        mutate(term = term_lab)
+    
+    p <- dwplot(tidy_mod, show_intercept = F) +
+        geom_vline(xintercept = 0,
+                   linetype = "dashed") +
+         scale_color_tron() + 
+        theme_minimal() +
+        theme_paper() +
+        theme(legend.position = "none") +
+        labs(
+            x = "Residual",
+            y = NULL,
+            title = title_lab
+        )
+    p
+    return(p)
+}
+
+resid_coef_plots <- lapply(1:length(resid_mods), function(i)
+  plot_resid_coefs(mod = resid_mods[[i]],
+                   term_lab = custom_labels[[i]],
+                   title_lab = titles[[i]])
+  )
+
+wrap_plots(resid_coef_plots)
+  
+
+ggsave(filename = here("replication/figures/resid_covariates.pdf"),
+       width = 10, height = 6)
+
+```

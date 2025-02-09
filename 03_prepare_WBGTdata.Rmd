@@ -1,0 +1,253 @@
+---
+title: "Aggregate the raw daily WBGTmax values to the monthly level for each cluster"
+author: "Katie McMahon"
+date: "2023-02-07"
+output: 
+  html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r packages, warning = FALSE, message = FALSE}
+
+# load libraries and source functions 
+source(here::here("replication/setup.R"))
+options(tibble.print_min = 25)
+options(scipen = 999)
+
+```
+
+# calculate year-month heat for each DHS cluster
+```{r load data}
+# load raw daily WBGTmax data extracted for each DHS cluster
+wbgtmax1983 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1983.csv"))
+wbgtmax1984 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1984.csv"))
+wbgtmax1985 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1985.csv"))
+wbgtmax1986 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1986.csv"))
+wbgtmax1987 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1987.csv"))
+wbgtmax1988 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1988.csv"))
+wbgtmax1989 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1989.csv"))
+wbgtmax1990 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1990.csv"))
+wbgtmax1991 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1991.csv"))
+wbgtmax1992 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1992.csv"))
+wbgtmax1993 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1993.csv"))
+wbgtmax1994 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1994.csv"))
+wbgtmax1995 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1995.csv"))
+wbgtmax1996 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1996.csv"))
+wbgtmax1997 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1997.csv"))
+wbgtmax1998 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1998.csv"))
+wbgtmax1999 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_1999.csv"))
+wbgtmax2000 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2000.csv"))
+wbgtmax2001 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2001.csv"))
+wbgtmax2002 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2002.csv"))
+wbgtmax2003 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2003.csv"))
+wbgtmax2004 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2004.csv"))
+wbgtmax2005 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2005.csv"))
+wbgtmax2006 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2006.csv"))
+wbgtmax2007 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2007.csv"))
+wbgtmax2008 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2008.csv"))
+wbgtmax2009 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2009.csv"))
+wbgtmax2010 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2010.csv"))
+wbgtmax2011 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2011.csv"))
+wbgtmax2012 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2012.csv"))
+wbgtmax2013 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2013.csv"))
+wbgtmax2014 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2014.csv"))
+wbgtmax2015 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2015.csv"))
+wbgtmax2016 <- read_csv(here("data/raw/ng-dhs-wbgtmax/ng_dhs_gps_wbgtmax_2016.csv"))
+
+```
+
+```{r clean up wbgtmax dfs}
+
+# pivot longer with key ID variables
+wbgtmax1983 <- pivot_longer(wbgtmax1983, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1984 <- pivot_longer(wbgtmax1984, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1985 <- pivot_longer(wbgtmax1985, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1986 <- pivot_longer(wbgtmax1986, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1987 <- pivot_longer(wbgtmax1987, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1988 <- pivot_longer(wbgtmax1988, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1989 <- pivot_longer(wbgtmax1989, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1990 <- pivot_longer(wbgtmax1990, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1991 <- pivot_longer(wbgtmax1991, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1992 <- pivot_longer(wbgtmax1992, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1993 <- pivot_longer(wbgtmax1993, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1994 <- pivot_longer(wbgtmax1994, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1995 <- pivot_longer(wbgtmax1995, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1996 <- pivot_longer(wbgtmax1996, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1997 <- pivot_longer(wbgtmax1997, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1998 <- pivot_longer(wbgtmax1998, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax1999 <- pivot_longer(wbgtmax1999, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2000 <- pivot_longer(wbgtmax2000, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2001 <- pivot_longer(wbgtmax2001, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2002 <- pivot_longer(wbgtmax2002, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2003 <- pivot_longer(wbgtmax2003, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2004 <- pivot_longer(wbgtmax2004, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2005 <- pivot_longer(wbgtmax2005, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2006 <- pivot_longer(wbgtmax2006, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2007 <- pivot_longer(wbgtmax2007, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2008 <- pivot_longer(wbgtmax2008, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2009 <- pivot_longer(wbgtmax2009, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2010 <- pivot_longer(wbgtmax2010, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2011 <- pivot_longer(wbgtmax2011, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2012 <- pivot_longer(wbgtmax2012, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2013 <- pivot_longer(wbgtmax2013, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2014 <- pivot_longer(wbgtmax2014, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2015 <- pivot_longer(wbgtmax2015, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+wbgtmax2016 <- pivot_longer(wbgtmax2016, !c(dhsid, dhsyear, latnum, longnum), 
+                        names_to='date', values_to='wbgtmax')
+
+# clean up date
+wbgtmax1983$date <- lubridate::ymd(wbgtmax1983$date)
+wbgtmax1984$date <- lubridate::ymd(wbgtmax1984$date)
+wbgtmax1985$date <- lubridate::ymd(wbgtmax1985$date)
+wbgtmax1986$date <- lubridate::ymd(wbgtmax1986$date)
+wbgtmax1987$date <- lubridate::ymd(wbgtmax1987$date)
+wbgtmax1988$date <- lubridate::ymd(wbgtmax1988$date)
+wbgtmax1989$date <- lubridate::ymd(wbgtmax1989$date)
+wbgtmax1990$date <- lubridate::ymd(wbgtmax1990$date)
+wbgtmax1991$date <- lubridate::ymd(wbgtmax1991$date)
+wbgtmax1992$date <- lubridate::ymd(wbgtmax1992$date)
+wbgtmax1993$date <- lubridate::ymd(wbgtmax1993$date)
+wbgtmax1994$date <- lubridate::ymd(wbgtmax1994$date)
+wbgtmax1995$date <- lubridate::ymd(wbgtmax1995$date)
+wbgtmax1996$date <- lubridate::ymd(wbgtmax1996$date)
+wbgtmax1997$date <- lubridate::ymd(wbgtmax1997$date)
+wbgtmax1998$date <- lubridate::ymd(wbgtmax1998$date)
+wbgtmax1999$date <- lubridate::ymd(wbgtmax1999$date)
+wbgtmax2000$date <- lubridate::ymd(wbgtmax2000$date)
+wbgtmax2001$date <- lubridate::ymd(wbgtmax2001$date)
+wbgtmax2002$date <- lubridate::ymd(wbgtmax2002$date)
+wbgtmax2003$date <- lubridate::ymd(wbgtmax2003$date)
+wbgtmax2004$date <- lubridate::ymd(wbgtmax2004$date)
+wbgtmax2005$date <- lubridate::ymd(wbgtmax2005$date)
+wbgtmax2006$date <- lubridate::ymd(wbgtmax2006$date)
+wbgtmax2007$date <- lubridate::ymd(wbgtmax2007$date)
+wbgtmax2008$date <- lubridate::ymd(wbgtmax2008$date)
+wbgtmax2009$date <- lubridate::ymd(wbgtmax2009$date)
+wbgtmax2010$date <- lubridate::ymd(wbgtmax2010$date)
+wbgtmax2011$date <- lubridate::ymd(wbgtmax2011$date)
+wbgtmax2012$date <- lubridate::ymd(wbgtmax2012$date)
+wbgtmax2013$date <- lubridate::ymd(wbgtmax2013$date)
+wbgtmax2014$date <- lubridate::ymd(wbgtmax2014$date)
+wbgtmax2015$date <- lubridate::ymd(wbgtmax2015$date)
+wbgtmax2016$date <- lubridate::ymd(wbgtmax2016$date)
+
+```
+
+```{r append wbgtmax dfs from all years}
+
+wbgtmax <- bind_rows(wbgtmax1983, wbgtmax1984, wbgtmax1985, wbgtmax1986, wbgtmax1987, wbgtmax1988, wbgtmax1989,
+                     wbgtmax1990, wbgtmax1991, wbgtmax1992, wbgtmax1993, wbgtmax1994, wbgtmax1995, wbgtmax1996,
+                     wbgtmax1997, wbgtmax1998, wbgtmax1999, wbgtmax2000, wbgtmax2001, wbgtmax2002, wbgtmax2003,
+                     wbgtmax2004, wbgtmax2005, wbgtmax2006, wbgtmax2007, wbgtmax2008, wbgtmax2009, wbgtmax2010,
+                     wbgtmax2011, wbgtmax2012, wbgtmax2013, wbgtmax2014, wbgtmax2015, wbgtmax2016) %>%
+    mutate(
+        yrmo = as.yearmon(date),
+        datecmc = make_cmc(month(yrmo), year(yrmo))
+    ) %>%
+    drop_na(wbgtmax)
+
+saveRDS(wbgtmax, here("replication/data/clean/wbgtmax_daily.Rds"))
+
+```
+
+```{r remove big files}
+
+rm(wbgtmax1983, wbgtmax1984, wbgtmax1985, wbgtmax1986, wbgtmax1987, wbgtmax1988, wbgtmax1989, wbgtmax1990, wbgtmax1991, wbgtmax1992, wbgtmax1993, wbgtmax1994, wbgtmax1995, wbgtmax1996, wbgtmax1997, wbgtmax1998, wbgtmax1999, wbgtmax2000, wbgtmax2001, wbgtmax2002, wbgtmax2003, wbgtmax2004, wbgtmax2005, wbgtmax2006, wbgtmax2007, wbgtmax2008, wbgtmax2009, wbgtmax2010, wbgtmax2011, wbgtmax2012, wbgtmax2013, wbgtmax2014, wbgtmax2015, wbgtmax2016)
+
+```
+
+
+```{r summarize to monthly level}
+
+# collapse to dhs cluster-month-year level
+wbgtmax_mo <- wbgtmax %>% 
+    drop_na(wbgtmax) %>% 
+    mutate(
+         yrmo = as.yearmon(date)
+    ) %>%
+    group_by(dhsid, yrmo) %>% 
+    summarise(
+        dhsid = first(dhsid),
+        mean_wbgtmax = mean(wbgtmax),
+        max_wbgtmax = max(wbgtmax),
+        min_wbgtmax = min(wbgtmax)) %>% 
+    ungroup() %>%
+    mutate(
+          calcmc_month = make_cmc(month(yrmo), year(yrmo))
+    )
+
+saveRDS(wbgtmax_mo, here("replication/data/clean/wbgtmax_monthly_ng.Rds"))
+
+rm(wbgtmax_mo)
+```
+
+# Calculate annual heat and lags 
+
+```{r annual heat}
+wbgtmax <- readRDS(here("replication/data/clean/wbgtmax_daily.Rds"))
+
+# calculate heat metrics in t-12 months preceeding interview
+setDT(wbgtmax)
+wbgtmax[, year:= year(date)]
+annual_wbgtmax <- wbgtmax[, 
+                          .(mean_wbgtmax = mean(wbgtmax, na.rm = T),
+                            max_wbgtmax = max(wbgtmax, na.rm = T),
+                            min_wbgtmax = min(wbgtmax, na.rm = T)),
+        by = c("dhsid", "year")] 
+
+    
+annual_wbgtmax <- annual_wbgtmax %>%
+    group_by(dhsid) %>%
+    arrange(year) %>%
+    mutate(
+        mean_wbgtmax_1yr = lag(mean_wbgtmax, 1),
+        mean_wbgtmax_2yr = rollmean(mean_wbgtmax_1yr, k = 2, align = "right", fill = NA),
+        mean_wbgtmax_3yr = rollmean(mean_wbgtmax_1yr, k = 3, align = "right", fill = NA),
+        mean_wbgtmax_5yr = rollmean(mean_wbgtmax_1yr, k = 5, align = "right", fill = NA),
+        max_wbgtmax_1yr = lag(max_wbgtmax, 1),
+        max_wbgtmax_2yr = rollmean(max_wbgtmax_1yr, k = 2, align = "right", fill = NA),
+        max_wbgtmax_3yr = rollmean(max_wbgtmax_1yr, k = 3, align = "right", fill = NA),
+        max_wbgtmax_5yr = rollmean(max_wbgtmax_1yr, k = 5, align = "right", fill = NA),
+        min_wbgtmax_1yr = lag(min_wbgtmax, 1),
+        min_wbgtmax_2yr = rollmean(min_wbgtmax_1yr, k = 2, align = "right", fill = NA),
+        min_wbgtmax_3yr = rollmean(min_wbgtmax_1yr, k = 3, align = "right", fill = NA),
+        min_wbgtmax_5yr = rollmean(min_wbgtmax_1yr, k = 5, align = "right", fill = NA)
+    )
+
+saveRDS(annual_wbgtmax, here("replication/data/clean/annual_heat.Rds"))
+
+```

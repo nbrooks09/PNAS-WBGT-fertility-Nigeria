@@ -1,0 +1,735 @@
+---
+title: "Create Fertility Outcomes"
+author: "Nina Brooks & Katie McMahon"
+date: "2024-07-06"
+output: 
+  html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r packages, warning = FALSE, message = FALSE}
+rm(list = ls())
+
+# load libraries and source functions 
+source(here::here("setup.R"))
+options(tibble.print_min = 25)
+
+
+
+```
+
+# Create woman-level outcomes at the time of survey
+# do we use this anywhere? it doesn't look like it
+```{r load data}
+# 
+# # load raw IPUMS-DHS file and make variable names a little more friendly 
+# dhs <- read_ipums_micro(
+#     ddi = here("replication/data/raw/dhs/idhs_00010_wmn.xml"),
+#     data = here("replication/data/raw/dhs/idhs_00010_wmn.dat.gz")
+#   ) %>%
+#     mutate(
+#         admin1_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+#         admin2_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018)),
+#         age5yr_lbl = as_factor(lbl_clean(AGE5YEAR)),
+#         urban_lbl = as_factor(lbl_clean(URBAN)),
+#         resident_lbl = as_factor(lbl_clean(RESIDENT)),
+#         marstat_lbl = as_factor(lbl_clean(MARSTAT)),
+#         religion_lbl = as_factor(lbl_clean(RELIGION)),
+#         floor_lbl = as_factor(lbl_clean(FLOOR)),
+#         educlvl_lbl = as_factor(lbl_clean(EDUCLVL)),
+#         water_lbl = as_factor(lbl_clean(DRINKWTR)),
+#         fpmethnow_lbl = as_factor(lbl_clean(FPMETHNOW)),
+#         fptypnow_lbl = as_factor(lbl_clean(FPTYPNOW)),
+#         wkcurrjob_lbl = as_factor(lbl_clean(WKCURRJOB)),
+#         geo_ng2003_2018_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+#         geoalt_ng2008_2018_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018))
+#     ) %>%
+#     janitor::clean_names() 
+# 
+# dhs <- dhs %>%
+#     mutate(
+#         womanid = paste0(sample, caseid), # create unique respondent identifiers
+#         resideintyr = as.numeric(resideintyr),
+#         resideintyr = case_when(
+#         resideintyr %in% c(96, 97, 98) ~ NA_real_, # recode visitors and missing to NA
+#         resideintyr == 0 ~ 0.5, # giving the <1 year 6 months for now
+#             T ~ resideintyr
+#         ),
+#         resideintmo = resideintyr*12 # time residing in months
+#     )  %>%
+#     mutate_all( # recode all missing data as missing
+#          list( 
+#              ~lbl_na_if(
+#                    .,
+#                    ~.lbl %in% c(
+#                        "Not interviewed (female questionnaire)",
+#                        "Not interviewed (household questionnaire)",
+#                        "Don't know",
+#                        "Missing",
+#                        "No response or missing",
+#                        "NIU (not in universe)"
+#                    ))
+#          )
+#     ) %>%
+#     # filter all cases without information on length of residence
+#     # eliminates 2013 sample (was not collected)
+#     filter(!is.na(resideintyr)) 
+#    
+# 
+# # manually calculate child ages in months based on dob and cmc, for missing ages in months
+# kids <- dhs %>%
+#     select(sample, womanid, intdatecmc, starts_with("kiddobcmc"),
+#            starts_with("kidcurage")) %>%
+#     select(-c(kiddobcmc_all, kidcurage_all, kidcuragemo_all)) %>%
+#     mutate_at(vars(starts_with("kiddobcmc"), 
+#                    starts_with("kidcurage")),
+#               as.numeric)
+#     
+# 
+# kids <- kids %>%
+#     pivot_longer(
+#         cols = c(starts_with("kiddobcmc"),starts_with("kidcurage")), 
+#         names_pattern = "kid(.*)_([0-9]*)",
+#         names_to = c(".value", "kid"),
+#         values_drop_na = TRUE
+#     ) %>%
+#     mutate(
+#         curagemo = case_when(
+#             is.na(curagemo) ~ (intdatecmc - dobcmc) -1,
+#             T ~ curagemo),
+#         curage = case_when(
+#                 is.na(curage) ~ floor(curagemo/12),
+#                 T ~ curage
+#         )
+#     ) %>%
+#     select(-dobcmc) %>%
+#     pivot_wider(
+#         values_from = c(curage, curagemo),
+#         names_from = kid,
+#         names_glue = "kid{.value}_{kid}"
+#     )
+# 
+# 
+# # merge updated ages back into main dhs data
+# dhs <- dhs %>%
+#     select(-starts_with("kidcurage")) %>%
+#     left_join(kids)
+# 
+# dhs <- dhs %>%
+#     mutate(
+#         birthin1yr = birthsin1yr >0,
+#         pregterm1yr = case_when(
+#             # missing for 1990 & 1999 samples
+#             (intdatecmc - pregtermcmc) <=12 ~ 1,
+#             is.na(pregtermin) ~ NA_real_,
+#             T ~ 0
+#         ),
+#         wantschildren = case_when(
+#             fertpref == 10 ~ 1,
+#             fertpref %in% c(NA, 51, 52) ~ NA_real_,
+#             T ~ 0
+#         ),
+#         fpuse = case_when(
+#             fptypnow %in% c(11, 12, 20) ~ 1,
+#             is.na(fptypnow) ~ NA_real_,
+#             T ~ 0
+#         ),
+#         young = case_when(
+#             age < 25 ~ "Under 25",
+#             T ~ "25 and older"
+#         ),
+#         first_child = case_when(
+#             cheb == 0 ~ "First Birth",
+#             T ~ "Has children"
+#         ),
+#         wkcurrjob_lbl = 
+#             case_when(
+#                 wkcurrjob_lbl == "Professional, technical, or managerial worker" | wkcurrjob_lbl == "Clerical worker" | wkcurrjob_lbl == "Sales worker"  | wkcurrjob_lbl == "Household, domestic, and services"  | wkcurrjob_lbl == "Services worker" ~ "Indoor Work",
+#                 wkcurrjob_lbl == "Skilled manual worker" | wkcurrjob_lbl == "Unskilled manual worker"  ~ "Manual Labor",
+#                 wkcurrjob_lbl == "Other" | wkcurrjob_lbl == "Missing" | wkcurrjob_lbl == "Don't know" | wkcurrjob_lbl == "NIU (not in universe)" ~ NA_character_,
+#         T ~ wkcurrjob_lbl),
+#     wkcurrjob = 
+#       case_when(
+#         wkcurrjob %in% c(10, 21, 22, 40, 42) ~ 20, 
+#         wkcurrjob %in% c(51, 52) ~ 50,
+#         wkcurrjob >= 96 ~ NA_real_,
+#         T ~ wkcurrjob),
+#     floor_lbl = 
+#         case_when(
+#             floor_lbl == "Earth-based" | floor_lbl == "Earth, sand" | floor_lbl == "Dung-based" | floor_lbl == "Dung" | floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Natural",
+#         # floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Rudimentary", #too small a group - consolidating with natural in previous line
+#         floor_lbl == "Parquet/polished wood" | floor_lbl == "Vinyl/asphalt strips/linoleum" | floor_lbl == "Ceramic tiles" | floor_lbl == "Cement/concrete" | floor_lbl == "Carpet" ~ "Finished",
+#         floor_lbl == "OTHER" ~ "Other",
+#         T ~ floor_lbl),
+#     floor = 
+#       case_when(
+#         floor < 300 ~ 100,
+#         # floor < 300 & floor > 200 ~ 200, #too small a group - consolidating with natural in previous line
+#         floor < 400 & floor > 300 ~ 300,
+#         T ~ floor),
+#      marstat_lbl = 
+#       case_when(
+#         marstat_lbl == "Married" | marstat_lbl == "Living together" ~ "In union",
+#         marstat_lbl == "Divorced" | marstat_lbl == "Separated/not living together" | marstat_lbl == "Widowed" ~ "Formerly in union",
+#         T ~ marstat_lbl),
+#     marstat = 
+#       case_when(
+#         marstat == 21 | marstat == 22 ~ 20,
+#         marstat == 31 | marstat == 32 | marstat == 32 ~ 30,
+#         T ~ marstat),
+#     chdied = case_when(
+#         cheb >0 ~ (cheb - chebalive),
+#         cheb == 0 ~ NA_real_
+#     ),
+#     fpnowany = case_when(
+#         fptypnow_lbl %in% c("Modern method", "Traditional method", "Folkloric method") ~ 1,
+#         fptypnow_lbl == "No method" ~ 0,
+#         T ~ NA_real_
+#     ),
+#     fpnowmodern = case_when(
+#         fptypnow_lbl == "Modern method" ~ 1,
+#         fptypnow_lbl == "Missing" ~ NA_real_,
+#         T ~ 0
+#     )
+# )
+# 
+# 
+# dhs <- dhs %>%
+#     group_by(womanid) %>%
+#     mutate(
+#         across(starts_with("kid_"), 
+#                   ~max(intdatecmc) - ., .names = "diff_{.col}")) %>%
+#     mutate(
+#         recent_death = case_when(
+#             if_any(starts_with("diff"), ~. <= 60 & . >=0) ~ "Death w/i past 5 years",
+#             T ~ "Did not")
+#     ) %>%
+#     select(-c(starts_with("diff"), starts_with("kid_"))) 
+# 
+# saveRDS(dhs, here("replication/data/clean/dhs_wmn.Rds"))
+
+
+```
+
+# Create woman-year level dataset by collapsing calendar
+```{r construct woman-year}
+
+
+# load raw IPUMS-DHS file and make variable names a little more friendly 
+cal <- read_ipums_micro(
+  ddi = here("replication/data/raw/dhs/idhs_00014.xml"),
+  data = here("replication/data/raw/dhs/idhs_00014.dat.gz")) %>%
+  mutate(
+    admin1_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+    admin2_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018)),
+    age5yr_lbl = as_factor(lbl_clean(AGE5YEAR)),
+    urban_lbl = as_factor(lbl_clean(URBAN)),
+    educlvl_lbl = as_factor(lbl_clean(EDUCLVL)),
+    resident_lbl = as_factor(lbl_clean(RESIDENT)),
+    marstat_lbl = as_factor(lbl_clean(MARSTAT)),
+    religion_lbl = as_factor(lbl_clean(RELIGION)),
+    floor_lbl = as_factor(lbl_clean(FLOOR)),
+    water_lbl = as_factor(lbl_clean(DRINKWTR)),
+    fptypnow_lbl = as_factor(lbl_clean(FPTYPNOW)),
+    calreprod_allevents_lbl = as_factor(lbl_clean(CALREPROD_ALLEVENTS)),
+    fpmethnow_lbl = as_factor(lbl_clean(FPMETHNOW)),
+    wkcurrjob_lbl = as_factor(lbl_clean(WKCURRJOB)),
+    geo_ng2003_2018_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+    geoalt_ng2008_2018_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018))
+    ) %>%
+  janitor::clean_names()
+
+# further refine variables
+cal <- cal %>%
+  dplyr::select(
+      dhsid, idhspsu, sample, intyear, intdatecmc, caseid, starts_with("cal"),
+      resideintyr, starts_with("chdesire"), pgdesire, fptypnow, fptypnow_lbl,
+      fpmethnow, fpmethnow_lbl, fplchdesire, admin2_lbl, age, birthmo, birthyear,
+      dobcmc, age5year, age5yr_lbl, geoalt_ng2008_2018, resident, geo_ng2003_2018, 
+      wealthq, wealths, wealthqur, wealthsur, resident_lbl, floor, floor_lbl, drinkwtr, 
+      water_lbl, educlvl, educlvl_lbl, cheb, urban, urban_lbl, religion, religion_lbl, 
+      agefrstmar, marstat, marstat_lbl, admin1_lbl, admin2_lbl, currwork, wkcurrjob,
+      wkcurrjob_lbl, ends_with("lbl"), wiferank, wifenum, calcontr) %>% # select key vars
+    mutate(
+        calcmc_month = as.numeric(calcmc_month), # next few lines clarify calendar vars
+        cal_year = as.integer((calcmc_month - 1)/12) + 1900, 
+        cal_month = calcmc_month - ((cal_year - 1900)*12),
+        intmonth = intdatecmc - ((intyear - 1900)*12),
+        calpreg_length = lbl_na_if(calpreg_length, ~.val >90),
+        womanid = paste0(sample, caseid), # create unique respondent identifiers
+        resideintyr = as.numeric(resideintyr),
+        resideintyr = case_when(
+            resideintyr == 96 | resideintyr == 98 ~ NA_real_, # recode visitors and missing to NA
+            resideintyr == 0 ~ 0.5, # giving the <1 year folks 6 months for now
+            T ~ resideintyr
+        ),
+        resideintmo = resideintyr*12 
+      )  %>%
+    group_by(womanid) %>%
+    mutate(
+        residcmc = max(intdatecmc)-(resideintmo - 1) # inclusive of the interview month
+      ) %>% 
+    # filter out any months before move to current residence
+    filter(
+        calcmc_month >= residcmc) %>%
+    filter(fpmethnow_lbl != "Female Sterilization")
+
+# add total count of births in given year
+cal_2 <- cal %>% 
+    group_by(womanid, cal_year) %>% 
+    
+    # total number of births to a woman in a given calendar year
+    mutate(yrbirthsum = sum(calbirth)) %>% 
+    ungroup() %>%
+    
+    # identify month of conception for each woman-pregnancy
+    # need to arrange by cmc within each woman for the lead to identify the
+    # correct month of conception
+    group_by(womanid) %>%
+    arrange(-calcmc_month) %>%
+    mutate(
+        conception =
+            case_when(
+                calpreg == 1 & lead(calpreg) == 0 ~ 1,
+                T ~ 0
+      )) %>% 
+    ungroup() %>%
+    group_by(womanid) %>%
+    mutate(
+        cheb_moving = as.numeric(cheb), # start with cheb_moving equal to cheb
+        calbirth = as.numeric(calbirth)) %>%  # correct weird IDHS class
+    mutate(
+        birthsum = cumsum(calbirth),
+        cheb_moving = cheb - birthsum,
+        # cheb_moving = case_when(
+        # # include the newly born child in cheb_moving in the month of birth
+        #     calbirth == 1 ~ cheb_moving + 1,
+        #     TRUE ~ cheb_moving),
+        # create moving age variable
+        agemo = calcmc_month - dobcmc,
+        ageyrs = agemo/12
+        ) %>%
+    ungroup()
+    
+cal_2$caleventpbt <- as.factor(cal_2$caleventpbt) 
+
+# woman-months where woman is pregnant
+cal_2$calpreg <- as.numeric(cal_2$calpreg) 
+
+# woman-months with a termination
+cal_2$calterm <- as.numeric(cal_2$calterm) 
+
+
+# recode religion
+cal_2 <- cal_2 %>% 
+  mutate(
+      religion_lbl = as.character(religion_lbl),
+      religion = as.numeric(religion),
+      religion_lbl = 
+          case_when(
+            religion_lbl == "Catholic" | religion_lbl == "Other Christian, country-specific" ~ "Christian",
+            religion_lbl == "MUSLIM" ~ "Muslim",
+            religion_lbl == "OTHER" | religion_lbl == "Traditional" ~ "Other",
+             religion_lbl == "Missing" ~ NA_character_,
+            T ~ religion_lbl),
+      religion = 
+          case_when(
+            religion == 2100 | religion == 2900 ~ 2000,
+            religion == 6100 ~ 9000,
+            religion == 9998 ~ NA_real_,
+            T ~ religion)
+      )
+
+
+# recode cheb
+cal_2$cheb <- as.numeric(cal_2$cheb) # correct weird IDHS class
+
+# add cheb_lbl
+cal_2 <- cal_2 %>% 
+  mutate(cheb_lbl = 
+    case_when(
+      cheb > 7 ~ "8+",
+      T ~ as.character(cheb)
+    )
+  )
+
+# recode family planning
+cal_2 <- cal_2 %>% 
+  mutate(
+    fptypnow = as.numeric(fptypnow),
+    fpmethnow = as.numeric(fpmethnow)
+    )
+
+# recode marital status
+cal_2$marstat_lbl <- as.character(cal_2$marstat_lbl) #
+cal_2$marstat <- as.numeric(cal_2$marstat) 
+cal_2$wifenum <- as.numeric(cal_2$wifenum) 
+
+cal_2 <- cal_2 %>% 
+  mutate(
+    marstat_lbl = 
+      case_when(
+        (marstat_lbl == "Married" | marstat_lbl == "Living together") & wifenum == 0  ~ "In monogamous union",
+        (marstat_lbl == "Married" | marstat_lbl == "Living together") & (wifenum > 0 & wifenum <90)  ~ "In polygamous union",
+        (marstat_lbl == "Married" | marstat_lbl == "Living together") & (wifenum > 90 & wifenum <100) ~ "In union",
+        marstat_lbl == "Divorced" | marstat_lbl == "Separated/not living together" | marstat_lbl == "Widowed" ~ "Formerly in union",
+        marstat_lbl == "Missing" ~ NA_character_,
+        T ~ marstat_lbl),
+    marstat = 
+      case_when(
+        marstat == 21 | marstat == 22 ~ 20,
+        marstat == 31 | marstat == 32 | marstat == 32 ~ 30,
+        marstat == 98 ~ NA_real_,
+        T ~ marstat)
+      )
+
+
+# recode floor material
+cal_2$floor_lbl <- as.character(cal_2$floor_lbl) # correct weird IDHS class
+cal_2$floor <- as.numeric(cal_2$floor) # correct weird IDHS class
+cal_2 <- cal_2 %>% 
+  mutate(
+    floor_lbl = 
+      case_when(
+        floor_lbl == "Earth-based" | floor_lbl == "Earth, sand" | floor_lbl == "Dung-based" | floor_lbl == "Dung" | floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Natural",
+        # floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Rudimentary", #too small a group - consolidating with natural in previous line
+        floor_lbl == "Parquet/polished wood" | floor_lbl == "Vinyl/asphalt strips/linoleum" | floor_lbl == "Ceramic tiles" | floor_lbl == "Cement/concrete" | floor_lbl == "Carpet" ~ "Finished",
+        floor_lbl == "OTHER" ~ "Other",
+        floor_lbl == "Missing" ~ NA_character_,
+        T ~ floor_lbl),
+    floor = 
+      case_when(
+        floor < 300 ~ 100,
+        # floor < 300 & floor > 200 ~ 200, #too small a group - consolidating with natural in previous line
+        floor < 400 & floor > 300 ~ 300,
+        floor == 998 ~ NA_real_,
+        T ~ floor)
+      )
+
+
+# recode work
+cal_2$wkcurrjob <- as.numeric(cal_2$wkcurrjob) # correct weird IDHS class
+
+cal_2 <- cal_2 %>% 
+  mutate(
+    wkcurrjob_lbl = 
+      case_when(
+         wkcurrjob_lbl == "Professional, technical, or managerial worker" | wkcurrjob_lbl == "Clerical worker" |
+            wkcurrjob_lbl == "Sales worker"  | wkcurrjob_lbl == "Household, domestic, and services"  | wkcurrjob_lbl == "Services worker" ~ "Indoor Work",
+        wkcurrjob_lbl == "Skilled manual worker" | wkcurrjob_lbl == "Unskilled manual worker"  ~ "Manual Labor",
+        wkcurrjob_lbl == "Other" | wkcurrjob_lbl == "Missing" | wkcurrjob_lbl == "Don't know" | wkcurrjob_lbl == "NIU (not in universe)" ~ NA_character_,
+        T ~ wkcurrjob_lbl),
+    wkcurrjob = 
+      case_when(
+        wkcurrjob %in% c(10, 21, 22, 40, 42) ~ 20, #too small a group - consolidating with natural in previous line
+        wkcurrjob %in% c(51, 52) ~ 50,
+        wkcurrjob >= 96 ~ NA_real_,
+        T ~ wkcurrjob)
+      )
+
+# recode water source
+cal_2$water_lbl <- as.character(cal_2$water_lbl) # correct weird IDHS class
+cal_2$drinkwtr <- as.numeric(cal_2$drinkwtr) # correct weird IDHS class
+cal_2 <- cal_2 %>% 
+  mutate(
+    water_lbl = 
+      case_when(
+        water_lbl == "Piped into neighbor's dwelling/yard" | water_lbl == "Piped into own dwelling" | water_lbl == "Piped into own yard/plot" | water_lbl == "Public tap/standpipe" ~ "Piped",
+        water_lbl == "Unprotected/open well" | water_lbl == "Protected well" | water_lbl == "Tube well or borehole" ~ "Well",
+        water_lbl == "Protected spring/surface water" | water_lbl == "Unprotected spring/surface water" | water_lbl == "River/dam/lake/ponds/streams/canal/irrigation channel" ~ "Surface",
+        water_lbl == "RAINWATER" ~ "Rainwater",
+        water_lbl == "Tanker truck" | water_lbl == "Cart with small tank" | water_lbl == "Bottled water" | water_lbl == "Sachet water (in a bag)" ~ "Purchased",
+        water_lbl == "OTHER SOURCE" ~ "Other",
+        water_lbl == "Missing" ~ NA_character_,
+        T ~ water_lbl),
+    drinkwtr = 
+      case_when(
+        drinkwtr < 2000 ~ 1000,
+        drinkwtr < 3000 & drinkwtr > 2000 ~ 2000,
+        drinkwtr < 4000 & drinkwtr > 3000 ~ 3000,
+        drinkwtr < 5000 & drinkwtr > 4000 ~ 4000,
+        drinkwtr < 6000 & drinkwtr > 5000 ~ 5000,
+        drinkwtr == 9998 ~ NA_real_,
+        T ~ drinkwtr)
+      )
+
+# fix wealth score issue
+# there is a gap in calendar wealthq for women surveyed in 2018, because DHS switched over to wealthqur (which adjusts wealthq depending on rural/urban status). For some reason, this gap is only in the calendar data - the birth histories report both wealthq and wealthqur for 2018, but the BH sample only includes women who have given birth so we would still have ~30% of the 2018 calendar sample missing wealthq if we merged it over. Luckily, we DO have wealthq from the woman questionnaire, so let's merge that over instead.
+
+# read in raw IPUMS-DHS file and clean up names
+woman <- read_ipums_micro(
+  ddi = here("replication/data/raw/dhs/idhs_00007.xml"),
+  data = here("replication/data/raw/dhs/idhs_00007.dat.gz")) %>% 
+  janitor::clean_names()
+
+# select wealthq and wealths for the years we need, along with unique woman identifiers for linking
+woman_wealth <- woman %>% 
+  mutate(womanid = paste0(sample, caseid)) %>% 
+  select(womanid, year, wealths, wealthq) %>% 
+  filter(year == 2008 | year == 2013 | year == 2018)
+
+# replicate woman_wealth with calendar data to try a mini merge 
+cal_wealth <- cal_2 %>% 
+  select(womanid, intyear, wealths, wealthq, wealthsur, wealthqur) %>% 
+  filter(intyear == 2008 | intyear == 2013 | intyear == 2018)
+
+# mini merge to check it over before doing the real merge
+wealth_merge <- left_join(cal_wealth, woman_wealth, by = "womanid")
+# looks good
+
+woman_wealth <- woman_wealth %>%
+  rename(woman_wealthq = wealthq, # create var names unique from those in the existing data
+         woman_wealths = wealths) %>% 
+  select(womanid, woman_wealthq, woman_wealths)
+
+# real merge
+cal_2 <- cal_2 %>%
+    left_join(woman_wealth, by = "womanid") %>% 
+    mutate(
+      woman_wealthq = as.numeric(woman_wealthq),
+      woman_wealths = as.numeric(woman_wealths),
+      wealthq = as.numeric(wealthq), # correct weird IDHS class
+      wealths = as.numeric(wealths), # correct weird IDHS class
+      wealthq =
+        case_when(
+          intyear == 2018 ~ woman_wealthq,
+          T ~ wealthq
+        ),
+      wealths = case_when(
+        intyear == 2018 ~ woman_wealths,
+        T ~ wealths
+      )
+  )
+
+
+saveRDS(cal_2, here("replication/data/clean/dhs_cal.Rds"))
+
+```
+
+
+
+# Create unbalanced woman panel of births from birth bistory
+```{r birth panel}
+
+# load raw IPUMS-DHS file and make variable names a little more friendly 
+dhs <- read_ipums_micro(
+    ddi = here("replication/data/raw/dhs/idhs_00010_wmn.xml"),
+    data = here("replication/data/raw/dhs/idhs_00010_wmn.dat.gz")
+  ) %>%
+    mutate(
+        admin1_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+        admin2_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018)),
+        age5yr_lbl = as_factor(lbl_clean(AGE5YEAR)),
+        urban_lbl = as_factor(lbl_clean(URBAN)),
+        resident_lbl = as_factor(lbl_clean(RESIDENT)),
+        marstat_lbl = as_factor(lbl_clean(MARSTAT)),
+        religion_lbl = as_factor(lbl_clean(RELIGION)),
+        floor_lbl = as_factor(lbl_clean(FLOOR)),
+        educlvl_lbl = as_factor(lbl_clean(EDUCLVL)),
+        water_lbl = as_factor(lbl_clean(DRINKWTR)),
+        fpmethnow_lbl = as_factor(lbl_clean(FPMETHNOW)),
+        fptypnow_lbl = as_factor(lbl_clean(FPTYPNOW)),
+        wkcurrjob_lbl = as_factor(lbl_clean(WKCURRJOB)),
+        geo_ng2003_2018_lbl = as_factor(lbl_clean(GEO_NG2003_2018)),
+        geoalt_ng2008_2018_lbl = as_factor(lbl_clean(GEOALT_NG2008_2018))
+    ) %>%
+    janitor::clean_names() %>%
+    mutate(
+         wkcurrjob_lbl = 
+            case_when(
+                wkcurrjob_lbl == "Professional, technical, or managerial worker" | wkcurrjob_lbl == "Clerical worker" | wkcurrjob_lbl == "Sales worker"  | wkcurrjob_lbl == "Household, domestic, and services"  | wkcurrjob_lbl == "Services worker" ~ "Indoor Work",
+                wkcurrjob_lbl == "Skilled manual worker" | wkcurrjob_lbl == "Unskilled manual worker"  ~ "Manual Labor",
+                wkcurrjob_lbl == "Other" | wkcurrjob_lbl == "Missing" | wkcurrjob_lbl == "Don't know" | wkcurrjob_lbl == "NIU (not in universe)" ~ NA_character_,
+        T ~ wkcurrjob_lbl),
+    wkcurrjob = 
+      case_when(
+        wkcurrjob %in% c(10, 21, 22, 40, 42) ~ 20, 
+        wkcurrjob %in% c(51, 52) ~ 50,
+        wkcurrjob >= 96 ~ NA_real_,
+        T ~ wkcurrjob),
+    floor_lbl = 
+        case_when(
+            floor_lbl == "Earth-based" | floor_lbl == "Earth, sand" | floor_lbl == "Dung-based" | floor_lbl == "Dung" | floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Natural",
+        # floor_lbl == "Wood planks" | floor_lbl == "Palm/bamboo" ~ "Rudimentary", #too small a group - consolidating with natural in previous line
+        floor_lbl == "Parquet/polished wood" | floor_lbl == "Vinyl/asphalt strips/linoleum" | floor_lbl == "Ceramic tiles" | floor_lbl == "Cement/concrete" | floor_lbl == "Carpet" ~ "Finished",
+        floor_lbl == "OTHER" ~ "Other",
+        T ~ floor_lbl),
+    floor = 
+      case_when(
+        floor < 300 ~ 100,
+        # floor < 300 & floor > 200 ~ 200, #too small a group - consolidating with natural in previous line
+        floor < 400 & floor > 300 ~ 300,
+        T ~ floor),
+     marstat_lbl = 
+      case_when(
+        marstat_lbl == "Married" | marstat_lbl == "Living together" ~ "In union",
+        marstat_lbl == "Divorced" | marstat_lbl == "Separated/not living together" | marstat_lbl == "Widowed" ~ "Formerly in union",
+        T ~ marstat_lbl),
+    marstat = 
+      case_when(
+        marstat == 21 | marstat == 22 ~ 20,
+        marstat == 31 | marstat == 32 | marstat == 32 ~ 30,
+        T ~ marstat),
+     religion_lbl = as.character(religion_lbl),
+      religion = as.numeric(religion),
+      religion_lbl = 
+          case_when(
+            religion_lbl == "Catholic" | religion_lbl == "Other Christian, country-specific" ~ "Christian",
+            religion_lbl == "MUSLIM" ~ "Muslim",
+            religion_lbl == "OTHER" | religion_lbl == "Traditional" ~ "Other",
+             religion_lbl == "Missing" ~ NA_character_,
+            T ~ religion_lbl),
+      religion = 
+          case_when(
+            religion == 2100 | religion == 2900 ~ 2000,
+            religion == 6100 ~ 9000,
+            religion == 9998 ~ NA_real_,
+            T ~ religion),
+     water_lbl = 
+      case_when(
+        water_lbl == "Piped into neighbor's dwelling/yard" | water_lbl == "Piped into own dwelling" | water_lbl == "Piped into own yard/plot" | water_lbl == "Public tap/standpipe" ~ "Piped",
+        water_lbl == "Unprotected/open well" | water_lbl == "Protected well" | water_lbl == "Tube well or borehole" ~ "Well",
+        water_lbl == "Protected spring/surface water" | water_lbl == "Unprotected spring/surface water" | water_lbl == "River/dam/lake/ponds/streams/canal/irrigation channel" ~ "Surface",
+        water_lbl == "RAINWATER" ~ "Rainwater",
+        water_lbl == "Tanker truck" | water_lbl == "Cart with small tank" | water_lbl == "Bottled water" | water_lbl == "Sachet water (in a bag)" ~ "Purchased",
+        water_lbl == "OTHER SOURCE" ~ "Other",
+        water_lbl == "Missing" ~ NA_character_,
+        T ~ water_lbl),
+    drinkwtr = 
+      case_when(
+        drinkwtr < 2000 ~ 1000,
+        drinkwtr < 3000 & drinkwtr > 2000 ~ 2000,
+        drinkwtr < 4000 & drinkwtr > 3000 ~ 3000,
+        drinkwtr < 5000 & drinkwtr > 4000 ~ 4000,
+        drinkwtr < 6000 & drinkwtr > 5000 ~ 5000,
+        drinkwtr == 9998 ~ NA_real_,
+        T ~ drinkwtr),
+    womanid = paste0(sample, caseid), # create unique respondent identifiers
+    resideintyr = as.numeric(resideintyr),
+    resideintyr = case_when(
+    resideintyr %in% c(96, 97, 98) ~ NA_real_, # recode visitors and missing to NA
+    resideintyr == 0 ~ 0.5, # giving the <1 year 6 months for now
+        T ~ resideintyr
+    ),
+    resideintmo = resideintyr*12, # time residing in months
+    residcmc = max(intdatecmc)-(resideintmo - 1), # inclusive of the interview
+    residyear = intyear - floor(resideintyr)
+    )  %>%
+    mutate_all( # recode all missing data as missing
+         list( 
+             ~lbl_na_if(
+                   .,
+                   ~.lbl %in% c(
+                       "Not interviewed (female questionnaire)",
+                       "Not interviewed (household questionnaire)",
+                       "Don't know",
+                       "Missing",
+                       "No response or missing",
+                       "NIU (not in universe)"
+                   ))
+         )
+    ) %>%
+    # filter all cases without information on length of residence
+    # eliminates 2013 sample (was not collected)
+    filter(!is.na(resideintyr)) 
+   
+# identify all births from birth histories
+births <- dhs %>%
+    select(intyear, womanid, 
+           starts_with("kidbirthyr")
+           ) %>%
+     select(-kidbirthyr_all)
+
+
+# want a row for each woman from age 16 to present for the length of time she has resided in her current residence
+# take residentyr and womanid and create as many rows as there are years
+# then merge with birth history to identify whether a birth happened in each year
+
+# create an unbalanced panel of all years woman has lived in current residence
+women_rows <- dhs %>%
+    select(sample, dhsid, intdatecmc, intyear, womanid, resideintyr, birthyear, cheb, educlvl_lbl, marstat_lbl, floor_lbl, religion_lbl
+           ) %>%
+    mutate(
+        resideintyr = as.numeric(resideintyr),
+        resideintyr = case_when(
+            resideintyr == 96 | resideintyr == 98 ~ NA_real_, # recode visitors and missing to NA
+            resideintyr == 0 ~ 0.5, # giving the <1 year folks 6 months for now
+            T ~ resideintyr
+        ),
+        resideintmo = resideintyr*12, # time residing in months
+        residcmc = max(intdatecmc)-(resideintmo - 1), # inclusive of the interview
+        residyear = intyear - floor(resideintyr)
+    ) %>%
+    group_by(womanid) %>%
+    # create rows for each year the woman has lived in her current residence
+    slice(rep(1:n(), each = (resideintyr))) %>%
+    mutate(
+        year = intyear - (row_number() - 1),
+        ageyrs = year - birthyear,
+        min_year = min(year) +1
+    ) %>%
+    group_by(womanid, intyear, intdatecmc) %>%
+    mutate(
+        id = row_number()-1
+    ) %>%
+    ungroup() %>%
+    mutate(
+        # update intdatecmc for each calendar year
+        intdatecmc = intdatecmc - 12*id,
+        resid_calyear = intdatecmc - residcmc + 1 # months of residence relative to each observation year
+    ) %>%
+    filter(ageyrs >=15) # only take births from age 15+
+
+
+births_long <- births %>%
+    mutate_at(vars(starts_with("kidbirthyr")), as.numeric) %>%
+    pivot_longer(
+        cols = starts_with("kidbirthyr"),
+        names_pattern = "(kidbirthyr)_([0-9][0-9])",
+        names_to = c(".value", "birth"),
+        values_drop_na = T
+    ) %>%
+    rename(year = kidbirthyr) %>%
+    group_by(womanid, year) %>%
+    # keeping only 1 birth-per-year for multiples
+    mutate(
+        id = 1:n(),
+        birth = as.numeric(birth)
+    ) %>%
+    ungroup() %>%
+    filter(id == 1) %>%
+    select(-id)
+    
+
+birth_panel <- women_rows %>%
+    left_join(births_long) %>%
+    mutate(
+        birth = case_when(
+            !is.na(birth) ~ 1,
+            T ~ 0
+        )
+    ) %>%
+    group_by(womanid) %>%
+    arrange(desc(year)) %>%
+    mutate(
+         birthcumsum = cumsum(birth),
+         cheb_moving = cheb - birthcumsum,
+         cheb_moving = cheb_moving+birth
+    )  %>%
+    group_by(womanid, intyear, intdatecmc) %>%
+    mutate(
+        id = row_number()-1
+    ) %>%
+    ungroup() %>%
+    mutate(
+        # update intdatecmc for each calendar year
+        intdatecmc = intdatecmc - 12*id,
+        resid_calyear = intdatecmc - residcmc + 1 # months of residence relative to each observation year
+    )
+
+
+save(birth_panel, file = here("replication/data/clean/birth_panel.Rdata"))
+
+
+```
