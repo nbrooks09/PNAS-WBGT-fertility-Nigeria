@@ -40,6 +40,6 @@ There are 8 scripts to reproduce the data cleaning and analysis for this paper. 
 
 `05_merge_heat_DHS.Rmd`: merges WBGTmax with all dhs datasets. specifically, merges heat and woman-month calendar data to create survival structured data for discrete-time analysis, merges heat with woman-month calendar to create annual pregnancy-level data, merges heat with birth panel to create annual births datasets.
 
-`06_makeFig1_Nigeria_AvgHeat83-2016.ipynb`: this script creates the map of annual average WBGT and change across Nigeria from 1983-2916.
+`06_makeFig1_Nigeria_AvgHeat83-2016.ipynb`: this script creates the map of annual average WBGT and change across Nigeria from 1983-2016.
 
 `07_run_analysis_heat_fertility.Rmd`: runs all analysis, including supplementary analysis, and outputs figures and tables from main paper and SI.
